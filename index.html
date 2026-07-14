@@ -317,6 +317,14 @@
   .upi-qr-code canvas, .upi-qr-code img{display:block;}
   .upi-qr-label{font-size:11px;color:var(--text-soft);margin-top:6px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;}
 
+  .bank-details-box{margin:14px 18px 4px;padding:14px 16px;background:var(--ok-bg);border:1px solid var(--line);border-left:3px solid var(--navy);border-radius:10px;}
+  .bank-details-title{font-family:'Manrope',sans-serif;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--navy);text-transform:uppercase;margin-bottom:8px;}
+  .bank-details-grid{display:flex;flex-direction:column;gap:4px;}
+  .bank-details-row{display:flex;gap:10px;font-size:13px;}
+  .bank-details-row .k{color:var(--text-soft);width:60px;flex-shrink:0;}
+  .bank-details-row .v{font-weight:700;color:var(--text);word-break:break-word;}
+  .bank-details-note{font-size:10.5px;color:var(--text-soft);margin-top:8px;line-height:1.4;}
+
   /* ---------- payment settings panel ---------- */
   #paymentSettingsPanel{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
   #paymentSettingsPanel .eyebrow2{font-family:'Manrope',sans-serif;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-soft);text-transform:uppercase;margin-bottom:10px;}
@@ -508,6 +516,23 @@
         <label for="settingsPayeeName">Payee name (shown to payer)</label>
         <input type="text" id="settingsPayeeName" placeholder="Thillai Decors and Events">
       </div>
+      <div class="eyebrow2" style="margin-top:14px;">Bank Account (for NEFT / RTGS / IMPS)</div>
+      <div class="auth-field">
+        <label for="settingsBankAccName">Account holder name</label>
+        <input type="text" id="settingsBankAccName" placeholder="RAMPRASHANTH R">
+      </div>
+      <div class="auth-field">
+        <label for="settingsBankName">Bank name</label>
+        <input type="text" id="settingsBankName" placeholder="State Bank Of India">
+      </div>
+      <div class="auth-field">
+        <label for="settingsBankAccNo">Account number</label>
+        <input type="text" id="settingsBankAccNo" placeholder="39704899179">
+      </div>
+      <div class="auth-field">
+        <label for="settingsBankIfsc">IFSC code</label>
+        <input type="text" id="settingsBankIfsc" placeholder="SBIN0010507">
+      </div>
       <button class="btn-primary" onclick="savePaymentSettings()">Save</button>
     </div>
 
@@ -655,7 +680,18 @@
 
     <div id="upiQrBox" class="upi-qr-box" style="display:none;">
       <div id="upiQrCode" class="upi-qr-code"></div>
-      <div class="upi-qr-label">Scan to pay via UPI</div>
+      <div class="upi-qr-label">Scan &amp; enter amount to pay via UPI</div>
+    </div>
+
+    <div id="bankDetailsBox" class="bank-details-box" style="display:none;">
+      <div class="bank-details-title">Bank Transfer (NEFT / RTGS / IMPS)</div>
+      <div class="bank-details-grid">
+        <div class="bank-details-row"><span class="k">Name</span><span class="v" id="bdAccName"></span></div>
+        <div class="bank-details-row"><span class="k">Bank</span><span class="v" id="bdBankName"></span></div>
+        <div class="bank-details-row"><span class="k">A/C No.</span><span class="v" id="bdAccNo"></span></div>
+        <div class="bank-details-row"><span class="k">IFSC</span><span class="v" id="bdIfsc"></span></div>
+      </div>
+      <div class="bank-details-note">For amounts above UPI's ₹1,00,000/day limit, please use NEFT/RTGS/IMPS with the details above.</div>
     </div>
 
     <div class="footer">
@@ -811,13 +847,27 @@ function recalc(){
   const balance = total - advTotal;
   document.getElementById('balanceVal').textContent = fmt(balance);
   updateUpiQr();
+  updateBankDetails();
 }
 
 // ---------- UPI PAYMENT SETTINGS + QR ----------
 const SETTINGS_KEY = 'thillai_settings';
 
+// Default bank details, used only until you save your own via UPI Settings.
+const DEFAULT_BANK_DETAILS = {
+  bankAccName: 'RAMPRASHANTH R',
+  bankName: 'State Bank Of India',
+  bankAccNo: '39704899179',
+  bankIfsc: 'SBIN0010507'
+};
+
 function loadSettings(){
-  try{ return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); }catch(e){ return {}; }
+  let s = {};
+  try{ s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); }catch(e){ s = {}; }
+  if(!s.bankAccName && !s.bankName && !s.bankAccNo && !s.bankIfsc){
+    s = Object.assign({}, DEFAULT_BANK_DETAILS, s);
+  }
+  return s;
 }
 
 function togglePaymentSettings(){
@@ -827,6 +877,10 @@ function togglePaymentSettings(){
     const s = loadSettings();
     document.getElementById('settingsUpiId').value = s.upiId || '';
     document.getElementById('settingsPayeeName').value = s.payeeName || '';
+    document.getElementById('settingsBankAccName').value = s.bankAccName || '';
+    document.getElementById('settingsBankName').value = s.bankName || '';
+    document.getElementById('settingsBankAccNo').value = s.bankAccNo || '';
+    document.getElementById('settingsBankIfsc').value = s.bankIfsc || '';
   }
   panel.style.display = isHidden ? '' : 'none';
 }
@@ -834,9 +888,14 @@ function togglePaymentSettings(){
 function savePaymentSettings(){
   const upiId = document.getElementById('settingsUpiId').value.trim();
   const payeeName = document.getElementById('settingsPayeeName').value.trim();
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ upiId, payeeName }));
+  const bankAccName = document.getElementById('settingsBankAccName').value.trim();
+  const bankName = document.getElementById('settingsBankName').value.trim();
+  const bankAccNo = document.getElementById('settingsBankAccNo').value.trim();
+  const bankIfsc = document.getElementById('settingsBankIfsc').value.trim();
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ upiId, payeeName, bankAccName, bankName, bankAccNo, bankIfsc }));
   document.getElementById('paymentSettingsPanel').style.display = 'none';
   updateUpiQr();
+  updateBankDetails();
 }
 
 function updateUpiQr(){
@@ -850,15 +909,14 @@ function updateUpiQr(){
     codeEl.innerHTML = '';
     return;
   }
-  const balanceEl = document.getElementById('balanceVal');
-  const amount = parseFloat((balanceEl ? balanceEl.textContent : '').replace(/[^0-9.]/g,'')) || 0;
   const payeeName = settings.payeeName || 'Thillai Decors and Events';
   const invNumEl = document.getElementById('invNumber');
   const invNum = invNumEl ? invNumEl.value : '';
   const note = invNum ? ('Invoice ' + invNum) : 'Invoice payment';
+  // No amount is included in the QR on purpose — the client enters the amount
+  // themselves when they scan, so the same QR works for partial payments too.
   const upiUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) +
     '&pn=' + encodeURIComponent(payeeName) +
-    (amount > 0 ? '&am=' + amount.toFixed(2) : '') +
     '&cu=INR&tn=' + encodeURIComponent(note);
   codeEl.innerHTML = '';
   try{
@@ -867,6 +925,25 @@ function updateUpiQr(){
   }catch(e){
     box.style.display = 'none';
   }
+}
+
+function updateBankDetails(){
+  const box = document.getElementById('bankDetailsBox');
+  if(!box) return;
+  const s = loadSettings();
+  const accName = (s.bankAccName || '').trim();
+  const bankName = (s.bankName || '').trim();
+  const accNo = (s.bankAccNo || '').trim();
+  const ifsc = (s.bankIfsc || '').trim();
+  if(!accName && !bankName && !accNo && !ifsc){
+    box.style.display = 'none';
+    return;
+  }
+  document.getElementById('bdAccName').textContent = accName;
+  document.getElementById('bdBankName').textContent = bankName;
+  document.getElementById('bdAccNo').textContent = accNo;
+  document.getElementById('bdIfsc').textContent = ifsc;
+  box.style.display = '';
 }
 
 function addAdvance(dateVal, amtVal){
@@ -1561,7 +1638,7 @@ async function buildInvoicePDF(sheet){
     // nudged to fall between them instead of straight through the middle of one.
     const sheetRect = sheet.getBoundingClientRect();
     const scaleY = canvas.height / sheetRect.height;
-    const blockEls = sheet.querySelectorAll('.band, .info-grid, .items-table thead, .item, .sub-row, .comp-box, .summary, .balance-box, .upi-qr-box, .footer');
+    const blockEls = sheet.querySelectorAll('.band, .info-grid, .items-table thead, .item, .sub-row, .comp-box, .summary, .balance-box, .upi-qr-box, .bank-details-box, .footer');
     const blocks = Array.from(blockEls).map(el=>{
       const r = el.getBoundingClientRect();
       return {
