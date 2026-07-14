@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
@@ -123,6 +124,7 @@
     font-family:'Manrope',sans-serif;font-weight:800;font-size:13px;letter-spacing:2px;color:var(--amber);
   }
   .doc-tag .date-line{font-size:11.5px;color:#c3cbdb;margin-top:4px;display:flex;align-items:center;gap:4px;justify-content:flex-end;}
+  .doc-tag .inv-number{font-size:11.5px;font-weight:800;color:var(--amber);margin-top:3px;letter-spacing:.3px;}
   .doc-tag input{
     border:none;border-bottom:1px dashed rgba(255,255,255,.35);background:transparent;color:#fff;
     font-family:'Inter',sans-serif;font-size:11.5px;width:118px;text-align:right;padding:2px 0;
@@ -308,6 +310,16 @@
   .exporting .sub-list li.zero-rate .sub-rate-input,
   .exporting .sub-list li.zero-rate .sub-amt{display:none !important;}
   .exporting .comp-box.is-empty{display:none !important;}
+
+  /* ---------- UPI QR ---------- */
+  .upi-qr-box{margin:16px 18px 4px;text-align:center;padding:14px 0 6px;}
+  .upi-qr-code{display:inline-block;padding:8px;background:#fff;border:1px solid var(--line);border-radius:10px;}
+  .upi-qr-code canvas, .upi-qr-code img{display:block;}
+  .upi-qr-label{font-size:11px;color:var(--text-soft);margin-top:6px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;}
+
+  /* ---------- payment settings panel ---------- */
+  #paymentSettingsPanel{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
+  #paymentSettingsPanel .eyebrow2{font-family:'Manrope',sans-serif;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-soft);text-transform:uppercase;margin-bottom:10px;}
   .exporting .sub-head.all-zero .sh-qty,
   .exporting .sub-head.all-zero .sh-rate,
   .exporting .sub-head.all-zero .sh-amt{display:none !important;}
@@ -480,9 +492,23 @@
         <div class="sub">Your saved invoices</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn-ghost" onclick="togglePaymentSettings()">⚙ UPI Settings</button>
         <button class="btn-ghost" onclick="handleLogout()">Log out</button>
         <button class="btn-gold" onclick="openNewInvoice()">+ New Invoice</button>
       </div>
+    </div>
+
+    <div id="paymentSettingsPanel" class="no-export" style="display:none;">
+      <div class="eyebrow2">UPI Payment Settings</div>
+      <div class="auth-field">
+        <label for="settingsUpiId">Your UPI ID</label>
+        <input type="text" id="settingsUpiId" placeholder="yourname@okhdfcbank">
+      </div>
+      <div class="auth-field">
+        <label for="settingsPayeeName">Payee name (shown to payer)</label>
+        <input type="text" id="settingsPayeeName" placeholder="Thillai Decors and Events">
+      </div>
+      <button class="btn-primary" onclick="savePaymentSettings()">Save</button>
     </div>
 
     <div id="dashSummary" class="dash-summary" style="display:none;">
@@ -565,6 +591,8 @@
         </div>
         <div class="doc-tag">
           <div class="kind">INVOICE</div>
+          <div class="inv-number" id="invNumberDisplay"></div>
+          <input type="hidden" id="invNumber" value="">
           <div class="date-line">Date <span class="date-field"><input type="date" id="invDate" value="2026-07-09" oninput="paintDate(this)"><span class="date-disp"></span></span></div>
         </div>
       </div>
@@ -623,6 +651,11 @@
     <div class="balance-box">
       <div class="lbl">Balance Due</div>
       <div class="val" id="balanceVal">₹0</div>
+    </div>
+
+    <div id="upiQrBox" class="upi-qr-box" style="display:none;">
+      <div id="upiQrCode" class="upi-qr-code"></div>
+      <div class="upi-qr-label">Scan to pay via UPI</div>
     </div>
 
     <div class="footer">
@@ -777,6 +810,63 @@ function recalc(){
   });
   const balance = total - advTotal;
   document.getElementById('balanceVal').textContent = fmt(balance);
+  updateUpiQr();
+}
+
+// ---------- UPI PAYMENT SETTINGS + QR ----------
+const SETTINGS_KEY = 'thillai_settings';
+
+function loadSettings(){
+  try{ return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); }catch(e){ return {}; }
+}
+
+function togglePaymentSettings(){
+  const panel = document.getElementById('paymentSettingsPanel');
+  const isHidden = panel.style.display === 'none';
+  if(isHidden){
+    const s = loadSettings();
+    document.getElementById('settingsUpiId').value = s.upiId || '';
+    document.getElementById('settingsPayeeName').value = s.payeeName || '';
+  }
+  panel.style.display = isHidden ? '' : 'none';
+}
+
+function savePaymentSettings(){
+  const upiId = document.getElementById('settingsUpiId').value.trim();
+  const payeeName = document.getElementById('settingsPayeeName').value.trim();
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ upiId, payeeName }));
+  document.getElementById('paymentSettingsPanel').style.display = 'none';
+  updateUpiQr();
+}
+
+function updateUpiQr(){
+  const box = document.getElementById('upiQrBox');
+  const codeEl = document.getElementById('upiQrCode');
+  if(!box || !codeEl) return;
+  const settings = loadSettings();
+  const upiId = (settings.upiId || '').trim();
+  if(!upiId || typeof QRCode === 'undefined'){
+    box.style.display = 'none';
+    codeEl.innerHTML = '';
+    return;
+  }
+  const balanceEl = document.getElementById('balanceVal');
+  const amount = parseFloat((balanceEl ? balanceEl.textContent : '').replace(/[^0-9.]/g,'')) || 0;
+  const payeeName = settings.payeeName || 'Thillai Decors and Events';
+  const invNumEl = document.getElementById('invNumber');
+  const invNum = invNumEl ? invNumEl.value : '';
+  const note = invNum ? ('Invoice ' + invNum) : 'Invoice payment';
+  const upiUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) +
+    '&pn=' + encodeURIComponent(payeeName) +
+    (amount > 0 ? '&am=' + amount.toFixed(2) : '') +
+    '&cu=INR&tn=' + encodeURIComponent(note);
+  codeEl.innerHTML = '';
+  try{
+    new QRCode(codeEl, { text: upiUrl, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
+    box.style.display = '';
+  }catch(e){
+    box.style.display = 'none';
+  }
 }
 
 function addAdvance(dateVal, amtVal){
@@ -813,6 +903,7 @@ function updateCompBoxState(){
 // ---- sample data used only to seed the very first visit ----
 function sampleInvoiceData(){
   return {
+    invNumber: 'INV-2026-0001',
     invDate: '2026-07-09',
     contactName: 'Sivasankaran M',
     phoneNo: '86081 25143',
@@ -839,7 +930,7 @@ function sampleInvoiceData(){
 function blankInvoiceData(){
   const today = new Date().toISOString().slice(0,10);
   return {
-    invDate: today, contactName:'', phoneNo:'', venueName:'', eventDate:'',
+    invNumber: '', invDate: today, contactName:'', phoneNo:'', venueName:'', eventDate:'',
     items: [{title:'', qty:1, rate:'', subs:[]}], comp: [], advances: []
   };
 }
@@ -855,8 +946,7 @@ function blankInvoiceData(){
 // URL and anon public key below (Settings -> API in Supabase).
 const SUPABASE_URL = 'https://adtkraowryiitwxyarcv.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkdGtyYW93cnlpaXR3eHlhcmN2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM2NjU0NDQsImV4cCI6MjA5OTI0MTQ0NH0.rZUumTrZPGpdXWr7gJouIHZXWJZRnAc1EhjK6i4GiYY';
-
-
+  
 const supabaseReady = SUPABASE_URL.startsWith('https://') && SUPABASE_ANON_KEY.length > 20;
 const supabaseClient = supabaseReady
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -996,6 +1086,7 @@ function serializeInvoice(){
     advances.push({ date: dateInput ? dateInput.value : '', amount: amtInput ? amtInput.value : '' });
   });
   return {
+    invNumber: document.getElementById('invNumber').value,
     invDate: document.getElementById('invDate').value,
     contactName: document.getElementById('contactName').value,
     phoneNo: document.getElementById('phoneNo').value,
@@ -1014,6 +1105,8 @@ function clearEditor(){
 
 function loadInvoiceIntoEditor(data){
   clearEditor();
+  document.getElementById('invNumber').value = data.invNumber || '';
+  document.getElementById('invNumberDisplay').textContent = data.invNumber ? ('#' + data.invNumber) : '';
   document.getElementById('invDate').value = data.invDate || new Date().toISOString().slice(0,10);
   document.getElementById('contactName').value = data.contactName || '';
   document.getElementById('phoneNo').value = data.phoneNo || '';
@@ -1188,6 +1281,7 @@ async function renderDashboard(){
       const clientName = escapeHtml(inv.data.contactName) || 'Untitled client';
       const venue = escapeHtml(inv.data.venueName) || 'No venue set';
       const isDue = s.balance > 0;
+      const invNumDisp = inv.data.invNumber ? escapeHtml(inv.data.invNumber) + ' &middot; ' : '';
       const badge = isDue
         ? `<span class="inv-badge due">Due</span>`
         : `<span class="inv-badge settled">Settled</span>`;
@@ -1200,7 +1294,7 @@ async function renderDashboard(){
                 <div class="inv-name">${clientName}</div>
                 <div class="inv-total">${fmt(s.total)}</div>
               </div>
-              <div class="inv-card-meta">${venue} &middot; ${dateDisp}</div>
+              <div class="inv-card-meta">${invNumDisp}${venue} &middot; ${dateDisp}</div>
               <div class="inv-card-bottom">
                 ${badge}
                 <span class="inv-card-balance">${isDue ? 'Due ' + fmt(s.balance) : 'Fully paid'}</span>
@@ -1222,9 +1316,28 @@ async function renderDashboard(){
     : 'Not connected to cloud database — saved on this device only.';
 }
 
-function openNewInvoice(){
+async function generateInvoiceNumber(){
+  const list = await loadInvoicesList();
+  const year = new Date().getFullYear();
+  let maxSeq = 0;
+  list.forEach(inv=>{
+    const num = inv.data && inv.data.invNumber;
+    if(num){
+      const m = /^INV-(\d{4})-(\d+)$/.exec(num);
+      if(m && parseInt(m[1],10) === year){
+        const seq = parseInt(m[2],10);
+        if(seq > maxSeq) maxSeq = seq;
+      }
+    }
+  });
+  return `INV-${year}-${String(maxSeq+1).padStart(4,'0')}`;
+}
+
+async function openNewInvoice(){
   currentInvoiceId = null;
-  loadInvoiceIntoEditor(blankInvoiceData());
+  const data = blankInvoiceData();
+  data.invNumber = await generateInvoiceNumber();
+  loadInvoiceIntoEditor(data);
   showEditor();
 }
 
@@ -1241,7 +1354,9 @@ async function duplicateInvoice(id){
   const list = await loadInvoicesList();
   const inv = list.find(x=>x.id===id);
   if(!inv) return;
-  const copy = { id: 'inv_'+Date.now(), updatedAt: Date.now(), data: JSON.parse(JSON.stringify(inv.data)) };
+  const newData = JSON.parse(JSON.stringify(inv.data));
+  newData.invNumber = await generateInvoiceNumber();
+  const copy = { id: 'inv_'+Date.now(), updatedAt: Date.now(), data: newData };
   list.push(copy);
   await persistInvoicesList(list);
   renderDashboard();
@@ -1446,7 +1561,7 @@ async function buildInvoicePDF(sheet){
     // nudged to fall between them instead of straight through the middle of one.
     const sheetRect = sheet.getBoundingClientRect();
     const scaleY = canvas.height / sheetRect.height;
-    const blockEls = sheet.querySelectorAll('.band, .info-grid, .items-table thead, .item, .sub-row, .comp-box, .summary, .balance-box, .footer');
+    const blockEls = sheet.querySelectorAll('.band, .info-grid, .items-table thead, .item, .sub-row, .comp-box, .summary, .balance-box, .upi-qr-box, .footer');
     const blocks = Array.from(blockEls).map(el=>{
       const r = el.getBoundingClientRect();
       return {
