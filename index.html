@@ -331,6 +331,10 @@
   /* ---------- payment settings panel ---------- */
   #paymentSettingsPanel{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
   #paymentSettingsPanel .eyebrow2{font-family:'Manrope',sans-serif;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-soft);text-transform:uppercase;margin-bottom:10px;}
+  .sync-status{font-size:12.5px;margin-top:10px;font-weight:600;min-height:16px;}
+  .sync-status.ok{color:var(--ok, #1a8f4c);}
+  .sync-status.err{color:var(--danger);}
+  .sync-status.pending{color:var(--text-soft);}
   .exporting .sub-head.all-zero .sh-qty,
   .exporting .sub-head.all-zero .sh-rate,
   .exporting .sub-head.all-zero .sh-amt{display:none !important;}
@@ -537,6 +541,7 @@
         <input type="text" id="settingsBankIfsc" placeholder="SBIN0010507">
       </div>
       <button class="btn-primary" onclick="savePaymentSettings()">Save</button>
+      <div id="settingsSyncStatus" class="sync-status"></div>
     </div>
 
     <div id="dashSummary" class="dash-summary" style="display:none;">
@@ -915,6 +920,7 @@ function applySettingsLocally(s){
 // there's no connection or nothing has been saved to the cloud yet.
 async function syncSettingsFromCloud(){
   if(!supabaseClient) return;
+  const statusEl = document.getElementById('settingsSyncStatus');
   try{
     const { data, error } = await supabaseClient
       .from('settings')
@@ -928,29 +934,47 @@ async function syncSettingsFromCloud(){
         s = Object.assign({}, DEFAULT_BANK_DETAILS, s);
       }
       applySettingsLocally(s);
+      if(statusEl){ statusEl.textContent = '✓ Synced from cloud'; statusEl.className = 'sync-status ok'; }
+    } else if(statusEl){
+      statusEl.textContent = 'No cloud settings saved yet on this account.';
+      statusEl.className = 'sync-status pending';
     }
   }catch(e){
     console.error('Could not load settings from cloud, using local copy instead', e);
+    if(statusEl){
+      statusEl.textContent = '⚠ Could not reach the cloud "settings" table — showing this device\'s local copy only. (' + (e && e.message ? e.message : 'unknown error') + ')';
+      statusEl.className = 'sync-status err';
+    }
   }
 }
 
 async function persistSettingsCloud(s){
-  if(!supabaseClient) return;
+  if(!supabaseClient) return false;
+  const statusEl = document.getElementById('settingsSyncStatus');
   try{
     const { error } = await supabaseClient
       .from('settings')
       .upsert({ id: SETTINGS_ROW_ID, updated_at: Date.now(), data: s });
     if(error) throw error;
+    if(statusEl){ statusEl.textContent = '✓ Saved and synced to the cloud'; statusEl.className = 'sync-status ok'; }
+    return true;
   }catch(e){
     console.error('Could not save settings to cloud (saved locally instead)', e);
+    if(statusEl){
+      statusEl.textContent = '⚠ Saved on THIS DEVICE ONLY — cloud save failed: ' + (e && e.message ? e.message : 'unknown error');
+      statusEl.className = 'sync-status err';
+    }
+    return false;
   }
 }
 
 function togglePaymentSettings(){
   const panel = document.getElementById('paymentSettingsPanel');
+  const statusEl = document.getElementById('settingsSyncStatus');
   const isHidden = panel.style.display === 'none';
   if(isHidden){
     fillSettingsPanelFields(loadSettings());
+    if(statusEl){ statusEl.textContent = 'Checking cloud for the latest saved settings…'; statusEl.className = 'sync-status pending'; }
     // Pull the latest from the cloud in case it was changed on another device.
     syncSettingsFromCloud();
   }
@@ -966,7 +990,8 @@ async function savePaymentSettings(){
   const bankIfsc = document.getElementById('settingsBankIfsc').value.trim();
   const s = { upiId, payeeName, bankAccName, bankName, bankAccNo, bankIfsc };
   applySettingsLocally(s);
-  document.getElementById('paymentSettingsPanel').style.display = 'none';
+  const statusEl = document.getElementById('settingsSyncStatus');
+  if(statusEl){ statusEl.textContent = 'Saving…'; statusEl.className = 'sync-status pending'; }
   await persistSettingsCloud(s);
 }
 
