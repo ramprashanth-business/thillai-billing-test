@@ -1435,7 +1435,25 @@ function updateUpiQr(){
     '&cu=INR&tn=' + encodeURIComponent(note);
   codeEl.innerHTML = '';
   try{
-    new QRCode(codeEl, { text: upiUrl, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
+    // Render into a throwaway container, then convert the canvas qrcode.js
+    // produces into a plain <img>. html2canvas (used for PDF/JPG export)
+    // reliably captures <img> elements but can intermittently miss a canvas
+    // that was drawn via JS rather than loaded as an image — this sidesteps
+    // that limitation entirely instead of patching it up after the fact.
+    const tempEl = document.createElement('div');
+    new QRCode(tempEl, { text: upiUrl, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
+    const qrCanvas = tempEl.querySelector('canvas');
+    if(qrCanvas){
+      const img = document.createElement('img');
+      img.src = qrCanvas.toDataURL('image/png');
+      img.width = 120;
+      img.height = 120;
+      img.alt = 'UPI QR code';
+      codeEl.appendChild(img);
+    } else if(tempEl.firstChild){
+      // very old browser without canvas support — fall back to whatever qrcode.js made
+      codeEl.appendChild(tempEl.firstChild);
+    }
     document.getElementById('upiQrPayeeName').textContent = payeeName;
     document.getElementById('upiQrId').textContent = upiId;
     box.style.display = '';
@@ -2772,7 +2790,6 @@ async function withExportMode(fn){
 async function downloadJPG(){
   await withExportMode(async (sheet)=>{
     const canvas = await html2canvas(sheet, {scale:2, backgroundColor:'#ffffff', useCORS:true});
-    stampQrOntoCanvas(sheet, canvas);
     const link = document.createElement('a');
     link.download = 'thillai-invoice.jpg';
     link.href = canvas.toDataURL('image/jpeg', 0.95);
@@ -2780,33 +2797,10 @@ async function downloadJPG(){
   });
 }
 
-// html2canvas can silently fail to snapshot the live UPI QR <canvas> that
-// qrcode.js draws (a known limitation across browsers/versions when a page
-// contains a canvas that was painted via JS rather than loaded as an image).
-// Rather than depend on html2canvas noticing it, we redraw the real QR canvas
-// directly onto the exported canvas ourselves, at the same on-screen position
-// — so the QR always ends up in the JPG/PDF, and stays crisp.
-function stampQrOntoCanvas(sheet, canvas){
-  const qrBox = document.getElementById('upiQrBox');
-  const qrCanvas = sheet.querySelector('#upiQrCode canvas');
-  if(!qrBox || !qrCanvas || qrBox.style.display === 'none') return;
-  try{
-    const sheetRect = sheet.getBoundingClientRect();
-    const qrRect = qrCanvas.getBoundingClientRect();
-    const scaleX = canvas.width / sheetRect.width;
-    const scaleY = canvas.height / sheetRect.height;
-    const x = (qrRect.left - sheetRect.left) * scaleX;
-    const y = (qrRect.top - sheetRect.top) * scaleY;
-    const w = qrRect.width * scaleX;
-    const h = qrRect.height * scaleY;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(x, y, w, h);
-    ctx.drawImage(qrCanvas, x, y, w, h);
-  }catch(e){
-    console.error('Could not stamp UPI QR onto exported image', e);
-  }
-}
+// NOTE: the UPI QR used to be a raw <canvas> drawn by qrcode.js, which
+// html2canvas could intermittently fail to capture. updateUpiQr() now stores
+// it as a plain <img> instead, which html2canvas captures reliably — so no
+// extra "stamp it on afterward" step is needed here anymore.
 
 // ---------- FILE NAMING ----------
 function sanitizeFileName(str){
@@ -2843,7 +2837,6 @@ async function shareOrDownloadPDF(pdf, filename){
 
 async function buildInvoicePDF(sheet){
     const canvas = await html2canvas(sheet, {scale:2, backgroundColor:'#ffffff', useCORS:true});
-    stampQrOntoCanvas(sheet, canvas);
     const { jsPDF } = window.jspdf;
     const pdfWidth = 210;
     const pageHeightMm = 297;
