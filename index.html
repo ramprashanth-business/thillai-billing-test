@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Thillai Decors and Events — Billing</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#152238">
+<link rel="icon" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Thillai Billing">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -386,6 +394,16 @@
 
   /* ---------- reports panel ---------- */
   #brandingSettingsPanel{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
+  .ios-install-banner{
+    display:flex;align-items:center;gap:10px;background:var(--paper);border:1px solid var(--line);
+    border-radius:12px;padding:12px 14px;margin-bottom:14px;
+  }
+  .ios-install-text{flex:1;font-size:12.5px;color:var(--text-soft);line-height:1.55;}
+  .ios-install-text strong{display:block;font-family:'Manrope',sans-serif;font-weight:800;font-size:13px;color:var(--text);margin-bottom:2px;}
+  .ios-install-dismiss{
+    background:none;border:none;color:var(--text-soft);font-size:15px;cursor:pointer;
+    padding:4px 6px;min-height:auto;flex-shrink:0;line-height:1;
+  }
   .branding-logo-row{display:flex;align-items:center;gap:14px;margin-bottom:10px;}
   .branding-logo-preview{
     width:60px;height:60px;border-radius:10px;background:var(--navy);display:flex;align-items:center;
@@ -598,6 +616,13 @@
 </div>
 
 <div class="app" id="dashboardScreen" style="display:none;">
+  <div id="iosInstallBanner" class="ios-install-banner no-export" style="display:none;">
+    <div class="ios-install-text">
+      <strong>Install this app on your iPhone</strong>
+      Tap 📤 Share in Safari's toolbar, then choose "Add to Home Screen".
+    </div>
+    <button class="ios-install-dismiss" onclick="dismissIosInstallBanner()" aria-label="Dismiss">✕</button>
+  </div>
   <div class="dash-hero no-export">
     <div class="dash-hero-top">
       <div>
@@ -605,6 +630,7 @@
         <div class="sub">Your saved invoices</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-ghost install-app-btn" style="display:none;" onclick="installApp()">⬇ Install App</button>
         <button class="btn-ghost theme-toggle-btn" onclick="toggleTheme()">🌙 Dark</button>
         <button class="btn-ghost" onclick="toggleBrandingSettings()">🖼 Branding</button>
         <button class="btn-ghost" onclick="togglePaymentSettings()">⚙ UPI Settings</button>
@@ -908,6 +934,60 @@ if(window.matchMedia){
   else if(themeMq.addListener) themeMq.addListener(onSystemThemeChange);
 }
 applyTheme();
+
+// ---------- PWA install ----------
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('Service worker registration failed', e));
+  });
+}
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  // Chrome/Edge/Android fire this when the app meets install criteria.
+  // Hold onto the event and reveal our own "Install App" button instead of
+  // relying solely on the browser's own UI.
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  document.querySelectorAll('.install-app-btn').forEach(btn => btn.style.display = '');
+});
+async function installApp(){
+  if(!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  document.querySelectorAll('.install-app-btn').forEach(btn => btn.style.display = 'none');
+}
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  document.querySelectorAll('.install-app-btn').forEach(btn => btn.style.display = 'none');
+});
+
+// iOS Safari never fires beforeinstallprompt — Add to Home Screen only
+// happens through Safari's own Share sheet — so point iPhone/iPad users
+// there instead of showing the (non-functional) Install button.
+const IOS_INSTALL_DISMISSED_KEY = 'thillai_ios_install_dismissed';
+function isIosSafari(){
+  const ua = window.navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+  return isIOS && isSafari;
+}
+function isRunningStandalone(){
+  return window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+}
+function maybeShowIosInstallBanner(){
+  const banner = document.getElementById('iosInstallBanner');
+  if(!banner || !isIosSafari() || isRunningStandalone()) return;
+  try{ if(localStorage.getItem(IOS_INSTALL_DISMISSED_KEY) === '1') return; }catch(e){}
+  banner.style.display = '';
+}
+function dismissIosInstallBanner(){
+  try{ localStorage.setItem(IOS_INSTALL_DISMISSED_KEY, '1'); }catch(e){}
+  const banner = document.getElementById('iosInstallBanner');
+  if(banner) banner.style.display = 'none';
+}
+maybeShowIosInstallBanner();
 
 function fmt(n){
   n = Math.round(n);
