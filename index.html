@@ -462,6 +462,7 @@
   }
   .inv-badge.due{background:#fdf1ed;color:var(--danger);}
   .inv-badge.settled{background:var(--amber-soft);color:var(--amber);}
+  .inv-badge.quote{background:#eef1fd;color:#4a5ee0;}
   .inv-card-balance{font-size:12px;color:var(--text-soft);}
   .inv-card-actions{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;padding-top:2px;}
   .empty-state{
@@ -506,10 +507,11 @@
         <h1>Thillai Billing</h1>
         <div class="sub">Your saved invoices</div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button class="btn-ghost" onclick="togglePaymentSettings()">⚙ UPI Settings</button>
         <button class="btn-ghost" onclick="handleLogout()">Log out</button>
-        <button class="btn-gold" onclick="openNewInvoice()">+ New Invoice</button>
+        <button class="btn-ghost" onclick="openNewDocument('quote')">+ New Quotation</button>
+        <button class="btn-gold" onclick="openNewDocument('invoice')">+ New Invoice</button>
       </div>
     </div>
 
@@ -583,6 +585,7 @@
       <button class="chip active" data-filter="all" onclick="setDashFilter('all')">All</button>
       <button class="chip" data-filter="due" onclick="setDashFilter('due')">Due</button>
       <button class="chip" data-filter="settled" onclick="setDashFilter('settled')">Settled</button>
+      <button class="chip" data-filter="quote" onclick="setDashFilter('quote')">Quotes</button>
     </div>
   </div>
 
@@ -610,6 +613,9 @@
       <button class="btn-primary" onclick="downloadJPG()">JPG</button>
       <button class="btn-gold" onclick="downloadPDF()">PDF</button>
     </div>
+    <div class="btns" style="margin-top:8px;display:none;" id="convertToInvoiceBar">
+      <button class="btn-primary" style="width:100%;" onclick="convertCurrentToInvoice()">Convert Quotation to Invoice</button>
+    </div>
   </div>
 
   <div id="sheet">
@@ -623,7 +629,8 @@
           </div>
         </div>
         <div class="doc-tag">
-          <div class="kind">INVOICE</div>
+          <div class="kind" id="docKindLabel">INVOICE</div>
+          <input type="hidden" id="docKind" value="invoice">
           <div class="inv-number" id="invNumberDisplay"></div>
           <input type="hidden" id="invNumber" value="">
           <div class="date-line">Date <span class="date-field"><input type="date" id="invDate" value="2026-07-09" oninput="paintDate(this)"><span class="date-disp"></span></span></div>
@@ -634,7 +641,8 @@
     <div class="info-grid">
       <div class="info-col">
         <div class="eyebrow">Billed To</div>
-        <div class="info-line"><span class="k">Name</span><input type="text" id="contactName" value="Sivasankaran M"></div>
+        <div class="info-line"><span class="k">Name</span><input type="text" id="contactName" value="Sivasankaran M" list="clientNameList" oninput="onClientNameInput(this.value)"></div>
+        <datalist id="clientNameList"></datalist>
         <div class="info-line"><span class="k">Phone</span><input type="text" id="phoneNo" value="86081 25143"></div>
       </div>
       <div class="info-col">
@@ -1103,9 +1111,10 @@ function sampleInvoiceData(){
   };
 }
 
-function blankInvoiceData(){
+function blankInvoiceData(kind){
   const today = new Date().toISOString().slice(0,10);
   return {
+    kind: kind === 'quote' ? 'quote' : 'invoice',
     invNumber: '', invDate: today, contactName:'', phoneNo:'', venueName:'', eventDate:'',
     items: [{title:'', qty:1, rate:'', subs:[]}], comp: [], advances: []
   };
@@ -1262,6 +1271,7 @@ function serializeInvoice(){
     advances.push({ date: dateInput ? dateInput.value : '', amount: amtInput ? amtInput.value : '' });
   });
   return {
+    kind: document.getElementById('docKind').value || 'invoice',
     invNumber: document.getElementById('invNumber').value,
     invDate: document.getElementById('invDate').value,
     contactName: document.getElementById('contactName').value,
@@ -1281,6 +1291,10 @@ function clearEditor(){
 
 function loadInvoiceIntoEditor(data){
   clearEditor();
+  const kind = data.kind === 'quote' ? 'quote' : 'invoice';
+  document.getElementById('docKind').value = kind;
+  document.getElementById('docKindLabel').textContent = kind === 'quote' ? 'QUOTATION' : 'INVOICE';
+  document.getElementById('convertToInvoiceBar').style.display = kind === 'quote' ? '' : 'none';
   document.getElementById('invNumber').value = data.invNumber || '';
   document.getElementById('invNumberDisplay').textContent = data.invNumber ? ('#' + data.invNumber) : '';
   document.getElementById('invDate').value = data.invDate || new Date().toISOString().slice(0,10);
@@ -1394,8 +1408,80 @@ function renderTrendChart(list){
   wrap.innerHTML = `<svg class="trend-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${bars}</svg>`;
 }
 
+async function backfillInvoiceNumbers(list){
+  const missing = list.filter(inv => !(inv.data && inv.data.invNumber));
+  if(missing.length === 0) return list;
+
+  // Oldest first, so numbers still read chronologically for old invoices.
+  missing.sort((a,b)=>{
+    const da = (a.data && a.data.invDate) ? new Date(a.data.invDate).getTime() : (a.updatedAt||0);
+    const db = (b.data && b.data.invDate) ? new Date(b.data.invDate).getTime() : (b.updatedAt||0);
+    return da - db;
+  });
+
+  // Start from whatever sequence numbers already exist per year.
+  const maxSeqByYear = {};
+  list.forEach(inv=>{
+    const num = inv.data && inv.data.invNumber;
+    if(num){
+      const m = /^INV-(\d{4})-(\d+)$/.exec(num);
+      if(m){
+        const yr = m[1];
+        const seq = parseInt(m[2],10);
+        if(!maxSeqByYear[yr] || seq > maxSeqByYear[yr]) maxSeqByYear[yr] = seq;
+      }
+    }
+  });
+
+  missing.forEach(inv=>{
+    const rawDate = (inv.data && inv.data.invDate) ? new Date(inv.data.invDate) : new Date(inv.updatedAt||Date.now());
+    const yr = String(isNaN(rawDate.getFullYear()) ? new Date().getFullYear() : rawDate.getFullYear());
+    const next = (maxSeqByYear[yr]||0) + 1;
+    maxSeqByYear[yr] = next;
+    inv.data.invNumber = `INV-${yr}-${String(next).padStart(4,'0')}`;
+  });
+
+  await persistInvoicesList(list);
+  return list;
+}
+
+// ---------- CLIENT AUTOCOMPLETE ----------
+// Maps a client's name (lowercased) to their most recently used phone number,
+// built from every saved invoice. Venue isn't remembered here on purpose —
+// repeat clients usually book a different venue each time.
+let clientDirectory = {};
+
+function rebuildClientDirectory(list){
+  const dir = {};
+  const sorted = [...list].sort((a,b)=> (a.updatedAt||0) - (b.updatedAt||0));
+  sorted.forEach(inv=>{
+    const name = (inv.data && inv.data.contactName || '').trim();
+    const phone = (inv.data && inv.data.phoneNo || '').trim();
+    if(name){
+      dir[name.toLowerCase()] = { name, phone };
+    }
+  });
+  clientDirectory = dir;
+  const dl = document.getElementById('clientNameList');
+  if(dl){
+    dl.innerHTML = Object.values(dir).map(c => `<option value="${escapeHtml(c.name)}"></option>`).join('');
+  }
+}
+
+function onClientNameInput(value){
+  const match = clientDirectory[(value||'').trim().toLowerCase()];
+  if(!match) return;
+  const phoneEl = document.getElementById('phoneNo');
+  // Only auto-fill phone if it's empty, so we never overwrite something typed on purpose.
+  if(phoneEl && !phoneEl.value.trim()){
+    phoneEl.value = match.phone;
+  }
+}
+
 async function renderDashboard(){
-  const list = await loadInvoicesList();
+  let list = await loadInvoicesList();
+  list = await backfillInvoiceNumbers(list);
+  rebuildClientDirectory(list);
   const wrap = document.getElementById('invoiceList');
   const empty = document.getElementById('emptyState');
   const controls = document.getElementById('dashControls');
@@ -1414,9 +1500,10 @@ async function renderDashboard(){
   empty.style.display = 'none';
   controls.style.display = '';
 
-  // ---- totals across all saved invoices ----
+  // ---- totals across all saved invoices (quotations don't count as billed revenue) ----
   let sumBilled = 0, sumDue = 0;
-  list.forEach(inv=>{
+  const billedList = list.filter(inv => inv.data.kind !== 'quote');
+  billedList.forEach(inv=>{
     const s = computeSummaryFromData(inv.data);
     sumBilled += s.total;
     sumDue += s.balance;
@@ -1425,20 +1512,21 @@ async function renderDashboard(){
   const pctReceived = sumBilled > 0 ? Math.round((sumReceived/sumBilled)*100) : 0;
   dashSummary.style.display = '';
   document.getElementById('dashTotalBilled').textContent = fmt(sumBilled);
-  document.getElementById('dashInvoiceCount').textContent = list.length + (list.length===1?' invoice':' invoices');
+  document.getElementById('dashInvoiceCount').textContent = billedList.length + (billedList.length===1?' invoice':' invoices');
   document.getElementById('dashReceived').textContent = fmt(sumReceived);
   document.getElementById('dashReceivedPct').textContent = pctReceived + '% collected';
   document.getElementById('dashTotalDue').textContent = fmt(sumDue);
-  document.getElementById('dashReceivedSub').textContent = (list.filter(inv=>computeSummaryFromData(inv.data).balance > 0).length) + ' pending';
+  document.getElementById('dashReceivedSub').textContent = (billedList.filter(inv=>computeSummaryFromData(inv.data).balance > 0).length) + ' pending';
 
-  renderTrendChart(list);
+  renderTrendChart(billedList);
 
   // ---- search + status filter ----
   const q = (document.getElementById('dashSearch').value || '').trim().toLowerCase();
   let filtered = list.filter(inv=>{
     const s = computeSummaryFromData(inv.data);
-    if(dashFilter === 'due' && !(s.balance > 0)) return false;
-    if(dashFilter === 'settled' && !(s.balance <= 0)) return false;
+    if(dashFilter === 'due' && !(inv.data.kind !== 'quote' && s.balance > 0)) return false;
+    if(dashFilter === 'settled' && !(inv.data.kind !== 'quote' && s.balance <= 0)) return false;
+    if(dashFilter === 'quote' && inv.data.kind !== 'quote') return false;
     if(q){
       const hay = ((inv.data.contactName||'') + ' ' + (inv.data.venueName||'')).toLowerCase();
       if(!hay.includes(q)) return false;
@@ -1457,10 +1545,13 @@ async function renderDashboard(){
       const clientName = escapeHtml(inv.data.contactName) || 'Untitled client';
       const venue = escapeHtml(inv.data.venueName) || 'No venue set';
       const isDue = s.balance > 0;
+      const isQuote = inv.data.kind === 'quote';
       const invNumDisp = inv.data.invNumber ? escapeHtml(inv.data.invNumber) + ' &middot; ' : '';
-      const badge = isDue
-        ? `<span class="inv-badge due">Due</span>`
-        : `<span class="inv-badge settled">Settled</span>`;
+      const badge = isQuote
+        ? `<span class="inv-badge quote">Quote</span>`
+        : (isDue
+          ? `<span class="inv-badge due">Due</span>`
+          : `<span class="inv-badge settled">Settled</span>`);
       return `
         <div class="inv-card">
           <div class="inv-card-main" onclick="openEditInvoice('${inv.id}')">
@@ -1473,13 +1564,14 @@ async function renderDashboard(){
               <div class="inv-card-meta">${invNumDisp}${venue} &middot; ${dateDisp}</div>
               <div class="inv-card-bottom">
                 ${badge}
-                <span class="inv-card-balance">${isDue ? 'Due ' + fmt(s.balance) : 'Fully paid'}</span>
+                <span class="inv-card-balance">${isQuote ? 'Quotation' : (isDue ? 'Due ' + fmt(s.balance) : 'Fully paid')}</span>
               </div>
             </div>
           </div>
           <div class="inv-card-actions no-export">
             <button class="btn-text" onclick="openEditInvoice('${inv.id}')">Edit</button>
             <button class="btn-text" onclick="shareInvoicePDF('${inv.id}')">Share</button>
+            ${isQuote ? `<button class="btn-text" onclick="convertQuoteToInvoice('${inv.id}')">Convert to Invoice</button>` : ''}
             <button class="btn-text" onclick="duplicateInvoice('${inv.id}')">Duplicate</button>
             <button class="btn-text" style="color:var(--danger);" onclick="deleteInvoice('${inv.id}')">Delete</button>
           </div>
@@ -1492,29 +1584,35 @@ async function renderDashboard(){
     : 'Not connected to cloud database — saved on this device only.';
 }
 
-async function generateInvoiceNumber(){
+async function generateInvoiceNumber(kind){
   const list = await loadInvoicesList();
   const year = new Date().getFullYear();
+  const prefix = kind === 'quote' ? 'QUO' : 'INV';
+  const re = new RegExp('^' + prefix + '-(\\d{4})-(\\d+)$');
   let maxSeq = 0;
   list.forEach(inv=>{
     const num = inv.data && inv.data.invNumber;
     if(num){
-      const m = /^INV-(\d{4})-(\d+)$/.exec(num);
+      const m = re.exec(num);
       if(m && parseInt(m[1],10) === year){
         const seq = parseInt(m[2],10);
         if(seq > maxSeq) maxSeq = seq;
       }
     }
   });
-  return `INV-${year}-${String(maxSeq+1).padStart(4,'0')}`;
+  return `${prefix}-${year}-${String(maxSeq+1).padStart(4,'0')}`;
+}
+
+async function openNewDocument(kind){
+  currentInvoiceId = null;
+  const data = blankInvoiceData(kind);
+  data.invNumber = await generateInvoiceNumber(kind);
+  loadInvoiceIntoEditor(data);
+  showEditor();
 }
 
 async function openNewInvoice(){
-  currentInvoiceId = null;
-  const data = blankInvoiceData();
-  data.invNumber = await generateInvoiceNumber();
-  loadInvoiceIntoEditor(data);
-  showEditor();
+  await openNewDocument('invoice');
 }
 
 async function openEditInvoice(id){
@@ -1531,9 +1629,33 @@ async function duplicateInvoice(id){
   const inv = list.find(x=>x.id===id);
   if(!inv) return;
   const newData = JSON.parse(JSON.stringify(inv.data));
-  newData.invNumber = await generateInvoiceNumber();
+  newData.invNumber = await generateInvoiceNumber(newData.kind);
   const copy = { id: 'inv_'+Date.now(), updatedAt: Date.now(), data: newData };
   list.push(copy);
+  await persistInvoicesList(list);
+  renderDashboard();
+}
+
+// Turns the invoice/quote currently open in the editor into a proper invoice:
+// gives it a fresh INV number and saves immediately, keeping everything else.
+async function convertCurrentToInvoice(){
+  document.getElementById('docKind').value = 'invoice';
+  document.getElementById('docKindLabel').textContent = 'INVOICE';
+  document.getElementById('convertToInvoiceBar').style.display = 'none';
+  const newNumber = await generateInvoiceNumber('invoice');
+  document.getElementById('invNumber').value = newNumber;
+  document.getElementById('invNumberDisplay').textContent = '#' + newNumber;
+  await saveCurrentInvoice();
+}
+
+// Same conversion, triggered from a dashboard card instead of the open editor.
+async function convertQuoteToInvoice(id){
+  const list = await loadInvoicesList();
+  const inv = list.find(x=>x.id===id);
+  if(!inv || inv.data.kind !== 'quote') return;
+  inv.data.kind = 'invoice';
+  inv.data.invNumber = await generateInvoiceNumber('invoice');
+  inv.updatedAt = Date.now();
   await persistInvoicesList(list);
   renderDashboard();
 }
