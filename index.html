@@ -451,6 +451,7 @@
   /* ---------- dashboard ---------- */
   #dashboardScreen{max-width:880px;}
   #dashboardScreen .btns.btns-1col{grid-template-columns:1fr;}
+  .more-menu{position:absolute;top:calc(100% + 6px);right:0;background:var(--paper);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(21,34,56,.15);padding:6px;min-width:190px;z-index:50;display:flex;flex-direction:column;gap:2px;}
 
   /* ---------- auth / login ---------- */
   .auth-app{max-width:400px;padding-top:60px;}
@@ -466,6 +467,10 @@
   .auth-field input:focus{outline:none;border-color:var(--navy);}
   .auth-error{font-size:12.5px;color:var(--danger);min-height:16px;margin:2px 0 6px;}
   .auth-toggle{text-align:center;margin-top:14px;font-size:13px;color:var(--text-soft);}
+
+  /* ---------- inactivity / modal ---------- */
+  .modal-overlay{position:fixed;inset:0;background:rgba(21,34,56,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;}
+  .modal-card{background:var(--paper);border-radius:14px;padding:22px;max-width:340px;width:100%;box-shadow:0 20px 45px rgba(21,34,56,.2);}
   .btns-2col{grid-template-columns:1fr 1fr !important;}
 
   .dash-hero{
@@ -612,6 +617,41 @@
       <span id="authToggleText">Don't have an account?</span>
       <button class="btn-text" id="authToggleBtn" onclick="toggleAuthMode()">Sign up</button>
     </div>
+    <div class="auth-toggle" style="margin-top:4px;">
+      <button class="btn-text" id="forgotPasswordBtn" onclick="promptForgotPassword()">Forgot password?</button>
+    </div>
+  </div>
+</div>
+
+<div class="app auth-app" id="resetPasswordScreen" style="display:none;">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="brand-mark"><span>TD</span></div>
+      <div>
+        <div class="auth-brand-name">Thillai Billing</div>
+        <div class="auth-brand-sub">Set a new password</div>
+      </div>
+    </div>
+    <div class="auth-field">
+      <label for="resetPassword1">New password</label>
+      <input type="password" id="resetPassword1" placeholder="••••••••" autocomplete="new-password">
+    </div>
+    <div class="auth-field">
+      <label for="resetPassword2">Confirm new password</label>
+      <input type="password" id="resetPassword2" placeholder="••••••••" autocomplete="new-password">
+    </div>
+    <div id="resetPasswordError" class="auth-error"></div>
+    <button class="btn-primary" id="resetPasswordBtn" style="width:100%;margin-top:6px;" onclick="submitPasswordReset()">Save new password</button>
+  </div>
+</div>
+
+<div id="inactivityWarning" class="modal-overlay" style="display:none;">
+  <div class="modal-card">
+    <h3 style="margin:0 0 8px;">Still there?</h3>
+    <p style="margin:0 0 16px;color:var(--text-soft);font-size:14px;">
+      For your account's safety, you'll be signed out in about a minute because of inactivity.
+    </p>
+    <button class="btn-primary" style="width:100%;" onclick="staySignedIn()">Stay signed in</button>
   </div>
 </div>
 
@@ -629,13 +669,19 @@
         <h1>Thillai Billing</h1>
         <div class="sub">Your saved invoices</div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <button class="btn-ghost install-app-btn" style="display:none;" onclick="installApp()">⬇ Install App</button>
-        <button class="btn-ghost theme-toggle-btn" onclick="toggleTheme()">🌙 Dark</button>
-        <button class="btn-ghost" onclick="toggleBrandingSettings()">🖼 Branding</button>
-        <button class="btn-ghost" onclick="togglePaymentSettings()">⚙ UPI Settings</button>
-        <button class="btn-ghost" onclick="toggleReportsPanel()">📊 Reports</button>
-        <button class="btn-ghost" onclick="exportInvoicesCSV()">⬇ Export CSV</button>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;position:relative;">
+        <div class="more-menu-wrap" style="position:relative;">
+          <button class="btn-ghost" onclick="toggleMoreMenu()">⋮ More</button>
+          <div id="dashMoreMenu" class="more-menu" style="display:none;">
+            <button class="btn-ghost install-app-btn" style="display:none;width:100%;text-align:left;" onclick="installApp()">⬇ Install App</button>
+            <button class="btn-ghost theme-toggle-btn" style="width:100%;text-align:left;" onclick="toggleTheme()">🌙 Dark mode</button>
+            <button class="btn-ghost" style="width:100%;text-align:left;" onclick="toggleBrandingSettings()">🖼 Branding</button>
+            <button class="btn-ghost" style="width:100%;text-align:left;" onclick="togglePaymentSettings()">⚙ UPI Settings</button>
+            <button class="btn-ghost" style="width:100%;text-align:left;" onclick="toggleReportsPanel()">📊 Reports</button>
+            <button class="btn-ghost" style="width:100%;text-align:left;" onclick="exportInvoicesCSV()">⬇ Export CSV</button>
+            <button class="btn-ghost admin-only" style="display:none;width:100%;text-align:left;" onclick="toggleActivityLogPanel()">🗂 Activity Log</button>
+          </div>
+        </div>
         <button class="btn-ghost" onclick="handleLogout()">Log out</button>
         <button class="btn-ghost" onclick="openNewDocument('quote')">+ New Quotation</button>
         <button class="btn-gold" onclick="openNewDocument('invoice')">+ New Invoice</button>
@@ -672,6 +718,12 @@
         <div id="reportItems"></div>
       </div>
       <button class="btn-primary" onclick="exportInvoicesCSV()">⬇ Export All Invoices (CSV)</button>
+    </div>
+
+    <div id="activityLogPanel" class="no-export admin-only" style="display:none;">
+      <div class="eyebrow2">Activity Log (admin only)</div>
+      <div class="report-sub">Sign-ins, sign-outs and setting changes, most recent first.</div>
+      <div id="activityLogList" style="margin-top:10px;font-size:13px;"></div>
     </div>
 
     <div id="paymentSettingsPanel" class="no-export" style="display:none;">
@@ -1237,6 +1289,7 @@ async function persistSettingsCloud(s, statusElId){
       .upsert({ id: SETTINGS_ROW_ID, updated_at: Date.now(), data: s });
     if(error) throw error;
     if(statusEl){ statusEl.textContent = '✓ Saved and synced to the cloud'; statusEl.className = 'sync-status ok'; }
+    logAuditEvent('settings_changed', { fields: Object.keys(s || {}) });
     return true;
   }catch(e){
     console.error('Could not save settings to cloud (saved locally instead)', e);
@@ -2230,6 +2283,7 @@ async function deleteInvoice(id){
   let list = await loadInvoicesList();
   list = list.filter(x=>x.id!==id);
   await persistInvoicesList(list);
+  logAuditEvent('invoice_deleted', { invoiceId: id });
   renderDashboard();
 }
 
@@ -2283,12 +2337,17 @@ async function submitAuth(){
   try{
     if(authMode === 'signin'){
       const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-      if(error) throw error;
+      if(error){
+        await logAuditEvent('login_failed', { email });
+        throw error;
+      }
+      await logAuditEvent('login_success', { email });
       await enterApp();
     } else {
       const { data, error } = await supabaseClient.auth.signUp({ email, password });
       if(error) throw error;
       if(data.session){
+        await logAuditEvent('signup', { email });
         await enterApp();
       } else {
         errEl.style.color = 'var(--amber)';
@@ -2305,23 +2364,94 @@ async function submitAuth(){
   }
 }
 
-async function handleLogout(){
+// ---------- FORGOT / RESET PASSWORD ----------
+// Supabase handles the actual reset securely (it emails a one-time link);
+// the app just triggers that email and, later, collects the new password.
+async function promptForgotPassword(){
+  const errEl = document.getElementById('authError');
+  errEl.style.color = 'var(--danger)';
+  const email = (document.getElementById('authEmail').value || '').trim();
+  if(!email){
+    errEl.textContent = 'Enter your email above first, then tap "Forgot password?".';
+    return;
+  }
+  if(!supabaseClient){
+    errEl.textContent = 'Password reset needs an internet connection.';
+    return;
+  }
+  const btn = document.getElementById('forgotPasswordBtn');
+  btn.disabled = true;
+  try{
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    if(error) throw error;
+    await logAuditEvent('password_reset_requested', { email });
+    errEl.style.color = 'var(--amber)';
+    errEl.textContent = 'Check your email for a link to reset your password.';
+  }catch(e){
+    errEl.textContent = (e && e.message) || 'Could not send reset email. Please try again.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function showResetPasswordScreen(){
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('dashboardScreen').style.display = 'none';
+  document.getElementById('editorScreen').style.display = 'none';
+  document.getElementById('resetPasswordScreen').style.display = '';
+}
+
+async function submitPasswordReset(){
+  const p1 = document.getElementById('resetPassword1').value;
+  const p2 = document.getElementById('resetPassword2').value;
+  const errEl = document.getElementById('resetPasswordError');
+  errEl.style.color = 'var(--danger)';
+  errEl.textContent = '';
+  if(!p1 || p1.length < 6){ errEl.textContent = 'Password must be at least 6 characters.'; return; }
+  if(p1 !== p2){ errEl.textContent = 'Passwords do not match.'; return; }
+
+  const btn = document.getElementById('resetPasswordBtn');
+  btn.disabled = true;
+  try{
+    const { error } = await supabaseClient.auth.updateUser({ password: p1 });
+    if(error) throw error;
+    await logAuditEvent('password_reset_completed', {});
+    document.getElementById('resetPasswordScreen').style.display = 'none';
+    await enterApp();
+  }catch(e){
+    errEl.textContent = (e && e.message) || 'Could not update password. Please try again.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function handleLogout(reason){
+  await logAuditEvent(reason === 'inactivity' ? 'auto_logout' : 'logout', {});
   if(supabaseClient){
     try{ await supabaseClient.auth.signOut(); }catch(e){}
   }
+  stopInactivityWatch();
+  currentUser = null;
+  currentUserRole = null;
   showLoginScreen();
 }
 
 function showLoginScreen(){
   document.getElementById('loginScreen').style.display = '';
+  document.getElementById('resetPasswordScreen').style.display = 'none';
   document.getElementById('dashboardScreen').style.display = 'none';
   document.getElementById('editorScreen').style.display = 'none';
 }
 
 async function enterApp(){
   document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('resetPasswordScreen').style.display = 'none';
   document.getElementById('editorScreen').style.display = 'none';
   document.getElementById('dashboardScreen').style.display = '';
+  await loadCurrentUserAndRole();
+  startInactivityWatch();
   syncSettingsFromCloud();
   let list = await loadInvoicesList();
   if(list.length === 0){
@@ -2331,12 +2461,44 @@ async function enterApp(){
   renderDashboard();
 }
 
+// ---------- USER / ROLE (admin vs staff) ----------
+// Everyone signs in the same way; a `profiles` table (one row per user, see
+// the SQL notes) says whether that person is "admin" or "user". Admin-only
+// UI (like the login/activity log) checks currentUserRole before showing.
+let currentUser = null;
+let currentUserRole = 'user';
+
+async function loadCurrentUserAndRole(){
+  currentUser = null;
+  currentUserRole = 'user';
+  if(!supabaseClient) return;
+  try{
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if(!user) return;
+    currentUser = user;
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
+    if(!error && data && data.role){
+      currentUserRole = data.role;
+    }
+  }catch(e){
+    console.error('Could not load user role', e);
+  }
+  document.querySelectorAll('.admin-only').forEach(el=>{
+    el.style.display = currentUserRole === 'admin' ? '' : 'none';
+  });
+}
+
 // ---------- INIT ----------
 async function initApp(){
   if(supabaseClient){
     const { data: { session } } = await supabaseClient.auth.getSession();
     supabaseClient.auth.onAuthStateChange((event)=>{
       if(event === 'SIGNED_OUT') showLoginScreen();
+      if(event === 'PASSWORD_RECOVERY') showResetPasswordScreen();
     });
     if(!session){
       showLoginScreen();
@@ -2344,6 +2506,170 @@ async function initApp(){
     }
   }
   await enterApp();
+}
+
+// ---------- DASHBOARD "MORE" MENU ----------
+function toggleMoreMenu(){
+  const menu = document.getElementById('dashMoreMenu');
+  if(!menu) return;
+  menu.style.display = menu.style.display === 'none' ? '' : 'none';
+}
+document.addEventListener('click', (e)=>{
+  const wrap = document.querySelector('.more-menu-wrap');
+  const menu = document.getElementById('dashMoreMenu');
+  if(!wrap || !menu || menu.style.display === 'none') return;
+  if(!wrap.contains(e.target)) menu.style.display = 'none';
+});
+
+// ---------- INACTIVITY / AUTO LOGOUT ----------
+// Signs the person out after 30 minutes of no activity, with a friendly
+// one-minute warning first so nobody is surprised or loses unsaved work.
+const INACTIVITY_LIMIT_MS = 30 * 60 * 1000;
+const INACTIVITY_WARNING_LEAD_MS = 60 * 1000;
+let inactivityTimer = null;
+let inactivityWarningTimer = null;
+let inactivityWatchActive = false;
+
+function startInactivityWatch(){
+  inactivityWatchActive = true;
+  resetInactivityTimer();
+}
+function stopInactivityWatch(){
+  inactivityWatchActive = false;
+  clearTimeout(inactivityTimer);
+  clearTimeout(inactivityWarningTimer);
+  hideInactivityWarning();
+}
+function resetInactivityTimer(){
+  if(!inactivityWatchActive) return;
+  clearTimeout(inactivityTimer);
+  clearTimeout(inactivityWarningTimer);
+  hideInactivityWarning();
+  inactivityWarningTimer = setTimeout(showInactivityWarning, INACTIVITY_LIMIT_MS - INACTIVITY_WARNING_LEAD_MS);
+  inactivityTimer = setTimeout(()=>{ handleLogout('inactivity'); }, INACTIVITY_LIMIT_MS);
+}
+function showInactivityWarning(){
+  const el = document.getElementById('inactivityWarning');
+  if(el) el.style.display = '';
+}
+function hideInactivityWarning(){
+  const el = document.getElementById('inactivityWarning');
+  if(el) el.style.display = 'none';
+}
+function staySignedIn(){
+  resetInactivityTimer();
+}
+['mousemove','keydown','click','touchstart','scroll'].forEach(evt=>{
+  document.addEventListener(evt, ()=>{ if(inactivityWatchActive) resetInactivityTimer(); }, {passive:true});
+});
+
+// ---------- LOGIN / ACTIVITY AUDIT LOG ----------
+// Records who signed in/out, when, from what kind of device, and roughly
+// where from — plus setting changes elsewhere in the app that call this.
+// See the "login_logs" table SQL provided separately; this fails silently
+// (never blocks the user) if that table isn't set up yet.
+//
+// Note on device identity: browsers deliberately do NOT expose a device's
+// real MAC address to web pages — no legitimate website can read it, for
+// privacy/security reasons enforced by the OS and browser itself. As the
+// closest practical substitute, each browser gets a random, permanent
+// "device ID" stored locally, so repeat sign-ins from the same
+// browser/device can still be recognised and compared over time.
+function getOrCreateDeviceId(){
+  try{
+    let id = localStorage.getItem('thillai_device_id');
+    if(!id){
+      id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem('thillai_device_id', id);
+    }
+    return id;
+  }catch(e){ return 'unknown'; }
+}
+
+function getDeviceInfo(){
+  return {
+    deviceId: getOrCreateDeviceId(),
+    userAgent: navigator.userAgent,
+    platform: navigator.platform || '',
+    language: navigator.language || '',
+    screen: (screen.width || 0) + 'x' + (screen.height || 0)
+  };
+}
+
+let cachedApproxLocation = null;
+// Best-effort, IP-based approximate location (city/region/country) — not
+// precise GPS, and not tied to any hardware identifier. Uses a free public
+// lookup; if it's unreachable or rate-limited this just returns null and
+// the log entry is still saved without a location.
+async function getApproxLocation(){
+  if(cachedApproxLocation) return cachedApproxLocation;
+  try{
+    const res = await fetch('https://ipapi.co/json/');
+    if(!res.ok) return null;
+    const d = await res.json();
+    cachedApproxLocation = {
+      ip: d.ip, city: d.city, region: d.region, country: d.country_name
+    };
+    return cachedApproxLocation;
+  }catch(e){
+    return null;
+  }
+}
+
+async function logAuditEvent(action, details){
+  if(!supabaseClient) return;
+  try{
+    const location = await getApproxLocation();
+    const { data: { user } } = await supabaseClient.auth.getUser().catch(()=>({data:{user:null}}));
+    await supabaseClient.from('login_logs').insert({
+      user_id: user ? user.id : (currentUser ? currentUser.id : null),
+      email: (details && details.email) || (user ? user.email : (currentUser ? currentUser.email : null)),
+      action: action,
+      device_info: getDeviceInfo(),
+      location: location,
+      details: details || {}
+    });
+  }catch(e){
+    // Never let logging break the app for the user.
+    console.error('Could not write activity log entry', e);
+  }
+}
+
+// ---------- ACTIVITY LOG PANEL (admin only) ----------
+function toggleActivityLogPanel(){
+  const panel = document.getElementById('activityLogPanel');
+  if(!panel) return;
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? '' : 'none';
+  if(show) loadActivityLog();
+}
+
+async function loadActivityLog(){
+  const list = document.getElementById('activityLogList');
+  if(!list || !supabaseClient) return;
+  list.textContent = 'Loading…';
+  try{
+    const { data, error } = await supabaseClient
+      .from('login_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if(error) throw error;
+    if(!data || data.length === 0){ list.textContent = 'No activity recorded yet.'; return; }
+    list.innerHTML = data.map(row=>{
+      const when = new Date(row.created_at).toLocaleString();
+      const loc = row.location ? [row.location.city, row.location.region, row.location.country].filter(Boolean).join(', ') : '—';
+      const device = row.device_info && row.device_info.userAgent ? row.device_info.userAgent : '—';
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--line);">
+        <div><strong>${row.action}</strong> — ${row.email || 'unknown user'}</div>
+        <div style="color:var(--text-soft);">${when} · ${loc}</div>
+        <div style="color:var(--text-soft);font-size:11.5px;">${device}</div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    list.textContent = 'Could not load the activity log (has the login_logs table been created yet?).';
+    console.error(e);
+  }
 }
 
 function showPublicViewError(msg){
@@ -2423,11 +2749,40 @@ async function withExportMode(fn){
 async function downloadJPG(){
   await withExportMode(async (sheet)=>{
     const canvas = await html2canvas(sheet, {scale:2, backgroundColor:'#ffffff', useCORS:true});
+    stampQrOntoCanvas(sheet, canvas);
     const link = document.createElement('a');
     link.download = 'thillai-invoice.jpg';
     link.href = canvas.toDataURL('image/jpeg', 0.95);
     link.click();
   });
+}
+
+// html2canvas can silently fail to snapshot the live UPI QR <canvas> that
+// qrcode.js draws (a known limitation across browsers/versions when a page
+// contains a canvas that was painted via JS rather than loaded as an image).
+// Rather than depend on html2canvas noticing it, we redraw the real QR canvas
+// directly onto the exported canvas ourselves, at the same on-screen position
+// — so the QR always ends up in the JPG/PDF, and stays crisp.
+function stampQrOntoCanvas(sheet, canvas){
+  const qrBox = document.getElementById('upiQrBox');
+  const qrCanvas = sheet.querySelector('#upiQrCode canvas');
+  if(!qrBox || !qrCanvas || qrBox.style.display === 'none') return;
+  try{
+    const sheetRect = sheet.getBoundingClientRect();
+    const qrRect = qrCanvas.getBoundingClientRect();
+    const scaleX = canvas.width / sheetRect.width;
+    const scaleY = canvas.height / sheetRect.height;
+    const x = (qrRect.left - sheetRect.left) * scaleX;
+    const y = (qrRect.top - sheetRect.top) * scaleY;
+    const w = qrRect.width * scaleX;
+    const h = qrRect.height * scaleY;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x, y, w, h);
+    ctx.drawImage(qrCanvas, x, y, w, h);
+  }catch(e){
+    console.error('Could not stamp UPI QR onto exported image', e);
+  }
 }
 
 // ---------- FILE NAMING ----------
@@ -2465,6 +2820,7 @@ async function shareOrDownloadPDF(pdf, filename){
 
 async function buildInvoicePDF(sheet){
     const canvas = await html2canvas(sheet, {scale:2, backgroundColor:'#ffffff', useCORS:true});
+    stampQrOntoCanvas(sheet, canvas);
     const { jsPDF } = window.jspdf;
     const pdfWidth = 210;
     const pageHeightMm = 297;
