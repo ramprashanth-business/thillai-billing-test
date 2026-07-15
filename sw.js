@@ -2,7 +2,13 @@
 // Only caches same-origin, GET requests (the HTML/manifest/icons). Supabase
 // calls go straight to the network — this never caches or replays your data,
 // it just lets the app itself open when you're offline or have a weak signal.
-const CACHE_NAME = 'thillai-billing-shell-v1';
+//
+// IMPORTANT: bump CACHE_NAME every time you deploy a change to index.html
+// (or any other app-shell file). Old caches are deleted automatically, and
+// this file uses a network-first strategy, so as long as the number below
+// is bumped, people will get the latest version on their very next reload
+// instead of being stuck on a stale cached copy.
+const CACHE_NAME = 'thillai-billing-shell-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -29,23 +35,24 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// Network-first: always try to fetch the latest version first, and only
+// fall back to the cached copy if the network is unavailable (offline, weak
+// signal). This is the opposite of the old "cached-first" behaviour, which
+// is what was causing updates to silently not show up.
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   if (new URL(req.url).origin !== self.location.origin) return; // leave Supabase etc. alone
 
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const network = fetch(req)
-        .then((res) => {
-          if (res && res.status === 200) {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(req)
+      .then((res) => {
+        if (res && res.status === 200) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
+        }
+        return res;
+      })
+      .catch(() => caches.match(req))
   );
 });
