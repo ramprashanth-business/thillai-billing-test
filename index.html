@@ -316,6 +316,9 @@
   .upi-qr-code{display:inline-block;padding:8px;background:#fff;border:1px solid var(--line);border-radius:10px;}
   .upi-qr-code canvas, .upi-qr-code img{display:block;}
   .upi-qr-label{font-size:11px;color:var(--text-soft);margin-top:6px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;}
+  .upi-qr-details{margin-top:8px;}
+  .upi-qr-payee{font-family:'Manrope',sans-serif;font-weight:800;font-size:14px;color:var(--navy);}
+  .upi-qr-id{font-size:12.5px;color:var(--text-soft);font-weight:600;margin-top:2px;}
 
   .bank-details-box{margin:14px 18px 4px;padding:14px 16px;background:var(--ok-bg);border:1px solid var(--line);border-left:3px solid var(--navy);border-radius:10px;}
   .bank-details-title{font-family:'Manrope',sans-serif;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--navy);text-transform:uppercase;margin-bottom:8px;}
@@ -681,6 +684,10 @@
     <div id="upiQrBox" class="upi-qr-box" style="display:none;">
       <div id="upiQrCode" class="upi-qr-code"></div>
       <div class="upi-qr-label">Scan &amp; enter amount to pay via UPI</div>
+      <div class="upi-qr-details">
+        <div id="upiQrPayeeName" class="upi-qr-payee"></div>
+        <div id="upiQrId" class="upi-qr-id"></div>
+      </div>
     </div>
 
     <div id="bankDetailsBox" class="bank-details-box" style="display:none;">
@@ -861,41 +868,106 @@ const DEFAULT_BANK_DETAILS = {
   bankIfsc: 'SBIN0010507'
 };
 
+// Settings (UPI ID, payee name, bank details) are cached locally for instant,
+// synchronous reads (needed since the QR/bank box refresh on every keystroke),
+// but the source of truth is the "settings" table in Supabase — the same
+// database your invoices already sync through. That's what makes an update on
+// one device show up on another: whenever you open the app, the dashboard, or
+// the UPI Settings panel, the latest row is pulled from Supabase and applied.
+const SETTINGS_ROW_ID = 'default';
+let cachedSettings = null;
+
 function loadSettings(){
+  if(cachedSettings) return cachedSettings;
   let s = {};
   try{ s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); }catch(e){ s = {}; }
   if(!s.bankAccName && !s.bankName && !s.bankAccNo && !s.bankIfsc){
     s = Object.assign({}, DEFAULT_BANK_DETAILS, s);
   }
+  cachedSettings = s;
   return s;
+}
+
+function fillSettingsPanelFields(s){
+  document.getElementById('settingsUpiId').value = s.upiId || '';
+  document.getElementById('settingsPayeeName').value = s.payeeName || '';
+  document.getElementById('settingsBankAccName').value = s.bankAccName || '';
+  document.getElementById('settingsBankName').value = s.bankName || '';
+  document.getElementById('settingsBankAccNo').value = s.bankAccNo || '';
+  document.getElementById('settingsBankIfsc').value = s.bankIfsc || '';
+}
+
+// Applies a settings object as the current local state (cache + localStorage),
+// then refreshes anything on screen that depends on it.
+function applySettingsLocally(s){
+  cachedSettings = s;
+  try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }catch(e){}
+  updateUpiQr();
+  updateBankDetails();
+  const panel = document.getElementById('paymentSettingsPanel');
+  if(panel && panel.style.display !== 'none'){
+    fillSettingsPanelFields(s);
+  }
+}
+
+// Pulls the latest settings row from Supabase (if configured) and applies it
+// locally. Safe to call anytime — falls back silently to the local copy if
+// there's no connection or nothing has been saved to the cloud yet.
+async function syncSettingsFromCloud(){
+  if(!supabaseClient) return;
+  try{
+    const { data, error } = await supabaseClient
+      .from('settings')
+      .select('data')
+      .eq('id', SETTINGS_ROW_ID)
+      .maybeSingle();
+    if(error) throw error;
+    if(data && data.data){
+      let s = data.data;
+      if(!s.bankAccName && !s.bankName && !s.bankAccNo && !s.bankIfsc){
+        s = Object.assign({}, DEFAULT_BANK_DETAILS, s);
+      }
+      applySettingsLocally(s);
+    }
+  }catch(e){
+    console.error('Could not load settings from cloud, using local copy instead', e);
+  }
+}
+
+async function persistSettingsCloud(s){
+  if(!supabaseClient) return;
+  try{
+    const { error } = await supabaseClient
+      .from('settings')
+      .upsert({ id: SETTINGS_ROW_ID, updated_at: Date.now(), data: s });
+    if(error) throw error;
+  }catch(e){
+    console.error('Could not save settings to cloud (saved locally instead)', e);
+  }
 }
 
 function togglePaymentSettings(){
   const panel = document.getElementById('paymentSettingsPanel');
   const isHidden = panel.style.display === 'none';
   if(isHidden){
-    const s = loadSettings();
-    document.getElementById('settingsUpiId').value = s.upiId || '';
-    document.getElementById('settingsPayeeName').value = s.payeeName || '';
-    document.getElementById('settingsBankAccName').value = s.bankAccName || '';
-    document.getElementById('settingsBankName').value = s.bankName || '';
-    document.getElementById('settingsBankAccNo').value = s.bankAccNo || '';
-    document.getElementById('settingsBankIfsc').value = s.bankIfsc || '';
+    fillSettingsPanelFields(loadSettings());
+    // Pull the latest from the cloud in case it was changed on another device.
+    syncSettingsFromCloud();
   }
   panel.style.display = isHidden ? '' : 'none';
 }
 
-function savePaymentSettings(){
+async function savePaymentSettings(){
   const upiId = document.getElementById('settingsUpiId').value.trim();
   const payeeName = document.getElementById('settingsPayeeName').value.trim();
   const bankAccName = document.getElementById('settingsBankAccName').value.trim();
   const bankName = document.getElementById('settingsBankName').value.trim();
   const bankAccNo = document.getElementById('settingsBankAccNo').value.trim();
   const bankIfsc = document.getElementById('settingsBankIfsc').value.trim();
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ upiId, payeeName, bankAccName, bankName, bankAccNo, bankIfsc }));
+  const s = { upiId, payeeName, bankAccName, bankName, bankAccNo, bankIfsc };
+  applySettingsLocally(s);
   document.getElementById('paymentSettingsPanel').style.display = 'none';
-  updateUpiQr();
-  updateBankDetails();
+  await persistSettingsCloud(s);
 }
 
 function updateUpiQr(){
@@ -921,6 +993,8 @@ function updateUpiQr(){
   codeEl.innerHTML = '';
   try{
     new QRCode(codeEl, { text: upiUrl, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
+    document.getElementById('upiQrPayeeName').textContent = payeeName;
+    document.getElementById('upiQrId').textContent = upiId;
     box.style.display = '';
   }catch(e){
     box.style.display = 'none';
@@ -1538,6 +1612,7 @@ async function enterApp(){
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('editorScreen').style.display = 'none';
   document.getElementById('dashboardScreen').style.display = '';
+  syncSettingsFromCloud();
   let list = await loadInvoicesList();
   if(list.length === 0){
     list = [{ id: 'sample_'+Date.now(), updatedAt: Date.now(), data: sampleInvoiceData() }];
