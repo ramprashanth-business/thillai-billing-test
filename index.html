@@ -23,6 +23,57 @@
     --text-soft:#6b7280;
     --danger:#c1483f;
     --ok-bg:#f4f6f5;
+    --input-bg:#ffffff;
+    --hover-bg:#f7f8fa;
+    --card-alt-bg:#fcfcfd;
+    --line-hover:#d8dce4;
+    --badge-quote-bg:#eef1fd;
+    --badge-quote-color:#4a5ee0;
+    --badge-due-bg:#fdf1ed;
+    color-scheme:light;
+  }
+  /* ---------- dark mode ----------
+     Applied to <body> (auto via prefers-color-scheme, or a manual override
+     saved in localStorage — see the theme script near the end of the file).
+     The invoice paper itself (#sheet) always re-declares the light values
+     below so exports/prints stay on a white background regardless of the
+     app's theme. */
+  body.dark-mode{
+    --navy:#7d9bd4;
+    --navy-soft:#5b7ab3;
+    --amber:#3fae78;
+    --amber-soft:#173327;
+    --bg:#0f1420;
+    --paper:#182238;
+    --line:#2b3550;
+    --text:#e8ecf5;
+    --text-soft:#93a0bc;
+    --danger:#e2685c;
+    --ok-bg:#1b2438;
+    --input-bg:#141d30;
+    --hover-bg:#202b45;
+    --card-alt-bg:#141d30;
+    --line-hover:#3c4a6c;
+    --badge-quote-bg:#1f2a4e;
+    --badge-quote-color:#9aabff;
+    --badge-due-bg:#3a2420;
+    color-scheme:dark;
+  }
+  body.dark-mode #sheet{
+    --navy:#152238;
+    --navy-soft:#243352;
+    --amber:#2e8b57;
+    --amber-soft:#e1f3e8;
+    --bg:#eef0f3;
+    --paper:#ffffff;
+    --line:#e6e8ec;
+    --text:#181d27;
+    --text-soft:#6b7280;
+    --danger:#c1483f;
+    --ok-bg:#f4f6f5;
+    --input-bg:#ffffff;
+    --hover-bg:#f7f8fa;
+    color-scheme:light;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html{-webkit-text-size-adjust:100%;}
@@ -35,6 +86,7 @@
     padding:16px 12px 60px;
     font-size:15px;
     line-height:1.4;
+    transition:background .15s ease, color .15s ease;
   }
   .app{max-width:840px;margin:0 auto;}
 
@@ -72,8 +124,8 @@
   .btn-primary:hover{box-shadow:0 6px 16px rgba(21,34,56,.25);}
   .btn-gold{background:var(--amber);color:#fff;}
   .btn-gold:hover{box-shadow:0 6px 16px rgba(46,139,87,.35);}
-  .btn-ghost{background:#fff;color:var(--navy);border:1px solid var(--line);}
-  .btn-ghost:hover{background:#f7f8fa;}
+  .btn-ghost{background:var(--input-bg);color:var(--navy);border:1px solid var(--line);}
+  .btn-ghost:hover{background:var(--hover-bg);}
   .btn-text{
     background:none;border:none;color:var(--navy-soft);font-size:13px;
     font-weight:600;cursor:pointer;padding:8px 4px;min-height:auto;
@@ -333,6 +385,16 @@
   #paymentSettingsPanel .eyebrow2{font-family:'Manrope',sans-serif;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-soft);text-transform:uppercase;margin-bottom:10px;}
 
   /* ---------- reports panel ---------- */
+  #brandingSettingsPanel{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
+  .branding-logo-row{display:flex;align-items:center;gap:14px;margin-bottom:10px;}
+  .branding-logo-preview{
+    width:60px;height:60px;border-radius:10px;background:var(--navy);display:flex;align-items:center;
+    justify-content:center;overflow:hidden;flex-shrink:0;border:1px solid var(--line);
+  }
+  .branding-logo-preview img{max-width:100%;max-height:100%;object-fit:contain;}
+  .branding-logo-actions{display:flex;flex-direction:column;gap:4px;align-items:flex-start;}
+  .branding-upload-btn{display:inline-flex;align-items:center;cursor:pointer;font-size:13.5px;padding:9px 14px;min-height:auto;}
+  .branding-hint{font-size:11.5px;color:var(--text-soft);margin-bottom:2px;}
   #reportsPanel{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
   #reportsPanel .eyebrow2{font-family:'Manrope',sans-serif;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-soft);text-transform:uppercase;margin-bottom:4px;}
   .report-sub{font-size:12px;color:var(--text-soft);margin-bottom:14px;}
@@ -382,7 +444,7 @@
   .auth-brand-sub{font-size:12.5px;color:var(--text-soft);margin-top:1px;}
   .auth-field{margin-bottom:14px;}
   .auth-field label{display:block;font-size:12px;color:var(--text-soft);margin-bottom:5px;font-weight:600;}
-  .auth-field input{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-family:'Inter',sans-serif;font-size:14.5px;background:#fff;}
+  .auth-field input{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-family:'Inter',sans-serif;font-size:14.5px;background:var(--input-bg);color:var(--text);}
   .auth-field input:focus{outline:none;border-color:var(--navy);}
   .auth-error{font-size:12.5px;color:var(--danger);min-height:16px;margin:2px 0 6px;}
   .auth-toggle{text-align:center;margin-top:14px;font-size:13px;color:var(--text-soft);}
@@ -445,28 +507,28 @@
     flex:1;min-width:160px;position:relative;
   }
   .dash-search input{
-    width:100%;border:1px solid var(--line);border-radius:10px;background:#fff;
+    width:100%;border:1px solid var(--line);border-radius:10px;background:var(--input-bg);
     padding:10px 12px 10px 32px;font-family:'Inter',sans-serif;font-size:13.5px;color:var(--text);
   }
   .dash-search input:focus{outline:none;border-color:var(--navy-soft);}
   .dash-search .ic{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-soft);pointer-events:none;}
   .dash-filters{display:flex;gap:6px;flex-wrap:wrap;}
   .chip{
-    border:1px solid var(--line);background:#fff;color:var(--text-soft);border-radius:20px;
+    border:1px solid var(--line);background:var(--input-bg);color:var(--text-soft);border-radius:20px;
     padding:8px 13px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;
     white-space:nowrap;transition:background .15s ease,color .15s ease,border-color .15s ease;
   }
   .chip.active{background:var(--navy);border-color:var(--navy);color:#fff;}
-  .chip:not(.active):hover{background:#f7f8fa;}
+  .chip:not(.active):hover{background:var(--hover-bg);}
 
   .list-count{font-size:11.5px;color:var(--text-soft);margin:0 2px 8px;}
 
   .inv-card{
-    border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;background:#fcfcfd;
+    border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;background:var(--card-alt-bg);
     display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;
     transition:box-shadow .15s ease,border-color .15s ease;
   }
-  .inv-card:hover{box-shadow:0 4px 14px rgba(21,34,56,.08);border-color:#d8dce4;}
+  .inv-card:hover{box-shadow:0 4px 14px rgba(21,34,56,.08);border-color:var(--line-hover);}
   .inv-card-main{flex:1;min-width:200px;cursor:pointer;display:flex;gap:12px;}
   .inv-avatar{
     width:38px;height:38px;border-radius:10px;background:var(--amber-soft);color:var(--amber);
@@ -483,9 +545,9 @@
     font-family:'Manrope',sans-serif;font-size:9.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;
     padding:3px 8px;border-radius:20px;
   }
-  .inv-badge.due{background:#fdf1ed;color:var(--danger);}
+  .inv-badge.due{background:var(--badge-due-bg);color:var(--danger);}
   .inv-badge.settled{background:var(--amber-soft);color:var(--amber);}
-  .inv-badge.quote{background:#eef1fd;color:#4a5ee0;}
+  .inv-badge.quote{background:var(--badge-quote-bg);color:var(--badge-quote-color);}
   .inv-card-balance{font-size:12px;color:var(--text-soft);}
   .inv-card-actions{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;padding-top:2px;}
   .empty-state{
@@ -496,6 +558,18 @@
 </style>
 </head>
 <body>
+<script>
+// Applied immediately (before the rest of the page renders) so there's no
+// flash of the wrong theme. Full logic — including the toggle button and
+// listening for system theme changes — lives in the main script below.
+(function(){
+  try{
+    var override = localStorage.getItem('thillai_theme');
+    var dark = override ? (override === 'dark') : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if(dark) document.body.classList.add('dark-mode');
+  }catch(e){}
+})();
+</script>
 
 <div class="app auth-app" id="loginScreen" style="display:none;">
   <div class="auth-card">
@@ -531,6 +605,8 @@
         <div class="sub">Your saved invoices</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-ghost theme-toggle-btn" onclick="toggleTheme()">🌙 Dark</button>
+        <button class="btn-ghost" onclick="toggleBrandingSettings()">🖼 Branding</button>
         <button class="btn-ghost" onclick="togglePaymentSettings()">⚙ UPI Settings</button>
         <button class="btn-ghost" onclick="toggleReportsPanel()">📊 Reports</button>
         <button class="btn-ghost" onclick="exportInvoicesCSV()">⬇ Export CSV</button>
@@ -538,6 +614,20 @@
         <button class="btn-ghost" onclick="openNewDocument('quote')">+ New Quotation</button>
         <button class="btn-gold" onclick="openNewDocument('invoice')">+ New Invoice</button>
       </div>
+    </div>
+
+    <div id="brandingSettingsPanel" class="no-export" style="display:none;">
+      <div class="eyebrow2">Business Logo</div>
+      <div class="branding-logo-row">
+        <div class="branding-logo-preview"><img id="brandingLogoPreview" src="" alt="Logo preview"></div>
+        <div class="branding-logo-actions">
+          <label class="btn-ghost branding-upload-btn" for="brandingLogoInput">Upload logo</label>
+          <input type="file" id="brandingLogoInput" accept="image/*" style="display:none" onchange="onBrandingLogoSelected(event)">
+          <button class="btn-text" style="color:var(--danger);" onclick="removeBrandingLogo()">Remove logo</button>
+        </div>
+      </div>
+      <div class="branding-hint">PNG or JPG works best. Shown on your invoices and quotations, and syncs to your other devices.</div>
+      <div id="brandingSyncStatus" class="sync-status"></div>
     </div>
 
     <div id="reportsPanel" class="no-export" style="display:none;">
@@ -667,6 +757,9 @@
       <button class="btn-primary" onclick="downloadJPG()">JPG</button>
       <button class="btn-gold" onclick="downloadPDF()">PDF</button>
     </div>
+    <div class="btns" style="margin-top:8px;">
+      <button class="btn-ghost theme-toggle-btn" style="width:100%;" onclick="toggleTheme()">🌙 Dark mode</button>
+    </div>
     <div class="btns" style="margin-top:8px;display:none;" id="convertToInvoiceBar">
       <button class="btn-primary" style="width:100%;" onclick="convertCurrentToInvoice()">Convert Quotation to Invoice</button>
     </div>
@@ -776,6 +869,45 @@
 
 <script>
 let itemCounter = 0;
+
+// The logo shipped in the HTML, kept as the fallback whenever no custom
+// logo has been uploaded via Branding settings.
+const DEFAULT_LOGO_DATA_URL = document.querySelector('#sheet .brand-mark img').getAttribute('src');
+
+// ---------- THEME (dark mode) ----------
+// Defaults to the system/browser theme; a manual toggle overrides it and is
+// remembered in localStorage. The inline script at the top of <body> already
+// applied the correct class before first paint — this just keeps everything
+// (icon labels, system-change listener) in sync afterward.
+const THEME_KEY = 'thillai_theme';
+
+function systemPrefersDark(){
+  return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+function getThemeOverride(){
+  try{ return localStorage.getItem(THEME_KEY); }catch(e){ return null; }
+}
+function applyTheme(){
+  const override = getThemeOverride();
+  const dark = override ? override === 'dark' : systemPrefersDark();
+  document.body.classList.toggle('dark-mode', dark);
+  document.querySelectorAll('.theme-toggle-btn').forEach(btn=>{
+    btn.textContent = dark ? '☀ Light mode' : '🌙 Dark mode';
+    btn.title = override ? 'Manual override — tap to switch' : 'Following your device theme — tap to switch';
+  });
+}
+function toggleTheme(){
+  const goingDark = !document.body.classList.contains('dark-mode');
+  try{ localStorage.setItem(THEME_KEY, goingDark ? 'dark' : 'light'); }catch(e){}
+  applyTheme();
+}
+if(window.matchMedia){
+  const themeMq = window.matchMedia('(prefers-color-scheme: dark)');
+  const onSystemThemeChange = ()=>{ if(!getThemeOverride()) applyTheme(); };
+  if(themeMq.addEventListener) themeMq.addEventListener('change', onSystemThemeChange);
+  else if(themeMq.addListener) themeMq.addListener(onSystemThemeChange);
+}
+applyTheme();
 
 function fmt(n){
   n = Math.round(n);
@@ -922,6 +1054,7 @@ function recalc(){
   document.getElementById('balanceVal').textContent = fmt(balance);
   updateUpiQr();
   updateBankDetails();
+  applyBrandingLogo();
 }
 
 // ---------- UPI PAYMENT SETTINGS + QR ----------
@@ -971,18 +1104,23 @@ function applySettingsLocally(s){
   try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }catch(e){}
   updateUpiQr();
   updateBankDetails();
+  applyBrandingLogo();
   const panel = document.getElementById('paymentSettingsPanel');
   if(panel && panel.style.display !== 'none'){
     fillSettingsPanelFields(s);
+  }
+  const brandingPanel = document.getElementById('brandingSettingsPanel');
+  if(brandingPanel && brandingPanel.style.display !== 'none'){
+    fillBrandingPanel(s);
   }
 }
 
 // Pulls the latest settings row from Supabase (if configured) and applies it
 // locally. Safe to call anytime — falls back silently to the local copy if
 // there's no connection or nothing has been saved to the cloud yet.
-async function syncSettingsFromCloud(){
+async function syncSettingsFromCloud(statusElId){
   if(!supabaseClient) return;
-  const statusEl = document.getElementById('settingsSyncStatus');
+  const statusEl = document.getElementById(statusElId || 'settingsSyncStatus');
   try{
     const { data, error } = await supabaseClient
       .from('settings')
@@ -1010,9 +1148,9 @@ async function syncSettingsFromCloud(){
   }
 }
 
-async function persistSettingsCloud(s){
+async function persistSettingsCloud(s, statusElId){
   if(!supabaseClient) return false;
-  const statusEl = document.getElementById('settingsSyncStatus');
+  const statusEl = document.getElementById(statusElId || 'settingsSyncStatus');
   try{
     const { error } = await supabaseClient
       .from('settings')
@@ -1050,11 +1188,96 @@ async function savePaymentSettings(){
   const bankName = document.getElementById('settingsBankName').value.trim();
   const bankAccNo = document.getElementById('settingsBankAccNo').value.trim();
   const bankIfsc = document.getElementById('settingsBankIfsc').value.trim();
-  const s = { upiId, payeeName, bankAccName, bankName, bankAccNo, bankIfsc };
+  // Merge with the existing settings object (rather than replacing it) so
+  // fields owned by other panels — like the branding logo — aren't dropped.
+  const s = Object.assign({}, loadSettings(), { upiId, payeeName, bankAccName, bankName, bankAccNo, bankIfsc });
   applySettingsLocally(s);
   const statusEl = document.getElementById('settingsSyncStatus');
   if(statusEl){ statusEl.textContent = 'Saving…'; statusEl.className = 'sync-status pending'; }
   await persistSettingsCloud(s);
+}
+
+// ---------- BRANDING (logo) ----------
+// The logo lives in the same "settings" row as the UPI/bank details, so it
+// reuses the same cache + Supabase sync machinery above.
+function applyBrandingLogo(){
+  const img = document.querySelector('#sheet .brand-mark img');
+  if(!img) return;
+  const url = loadSettings().logoDataUrl || DEFAULT_LOGO_DATA_URL;
+  if(img.getAttribute('src') !== url) img.src = url;
+}
+
+function fillBrandingPanel(s){
+  const img = document.getElementById('brandingLogoPreview');
+  if(img) img.src = s.logoDataUrl || DEFAULT_LOGO_DATA_URL;
+}
+
+function toggleBrandingSettings(){
+  const panel = document.getElementById('brandingSettingsPanel');
+  const statusEl = document.getElementById('brandingSyncStatus');
+  const isHidden = panel.style.display === 'none';
+  if(isHidden){
+    fillBrandingPanel(loadSettings());
+    if(statusEl){ statusEl.textContent = 'Checking cloud for the latest saved logo…'; statusEl.className = 'sync-status pending'; }
+    // Pull the latest from the cloud in case it was changed on another device.
+    syncSettingsFromCloud('brandingSyncStatus');
+  }
+  panel.style.display = isHidden ? '' : 'none';
+}
+
+// Draws the uploaded file onto a canvas capped at maxDim on its longest
+// side and returns a PNG data URL — keeps the logo crisp on the invoice
+// while keeping the settings row (and every export) small and fast.
+function resizeLogoFile(file, maxDim){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onerror = ()=>reject(reader.error || new Error('Could not read that file'));
+    reader.onload = ()=>{
+      const img = new Image();
+      img.onerror = ()=>reject(new Error('Could not read that image'));
+      img.onload = ()=>{
+        let width = img.naturalWidth, height = img.naturalHeight;
+        if(Math.max(width, height) > maxDim){
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function onBrandingLogoSelected(event){
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if(!file) return;
+  const statusEl = document.getElementById('brandingSyncStatus');
+  if(statusEl){ statusEl.textContent = 'Processing image…'; statusEl.className = 'sync-status pending'; }
+  try{
+    const dataUrl = await resizeLogoFile(file, 320);
+    const s = Object.assign({}, loadSettings(), { logoDataUrl: dataUrl });
+    applySettingsLocally(s);
+    if(statusEl){ statusEl.textContent = 'Saving…'; statusEl.className = 'sync-status pending'; }
+    await persistSettingsCloud(s, 'brandingSyncStatus');
+  }catch(e){
+    console.error('Could not process logo image', e);
+    if(statusEl){ statusEl.textContent = '⚠ Could not read that image — try a different file.'; statusEl.className = 'sync-status err'; }
+  }
+}
+
+async function removeBrandingLogo(){
+  const s = Object.assign({}, loadSettings());
+  delete s.logoDataUrl;
+  applySettingsLocally(s);
+  const statusEl = document.getElementById('brandingSyncStatus');
+  if(statusEl){ statusEl.textContent = 'Saving…'; statusEl.className = 'sync-status pending'; }
+  await persistSettingsCloud(s, 'brandingSyncStatus');
 }
 
 function updateUpiQr(){
