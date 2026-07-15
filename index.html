@@ -536,6 +536,8 @@
   .dash-search input:focus{outline:none;border-color:var(--navy-soft);}
   .dash-search .ic{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-soft);pointer-events:none;}
   .dash-filters{display:flex;gap:6px;flex-wrap:wrap;}
+  #trashBar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff7ed;border:1px solid #fde3c8;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:13px;color:#7a5a2e;}
+  .inv-badge.trashed{background:#f1f1f1;color:#777;}
   .chip{
     border:1px solid var(--line);background:var(--input-bg);color:var(--text-soft);border-radius:20px;
     padding:8px 13px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;
@@ -581,6 +583,16 @@
 </style>
 </head>
 <body>
+<div id="dashMoreMenu" class="more-menu" style="display:none;">
+  <button class="btn-ghost install-app-btn" style="display:none;width:100%;text-align:left;" onclick="installApp()">⬇ Install App</button>
+  <button class="btn-ghost theme-toggle-btn" style="width:100%;text-align:left;" onclick="toggleTheme()">🌙 Dark mode</button>
+  <button class="btn-ghost" style="width:100%;text-align:left;" onclick="toggleBrandingSettings()">🖼 Branding</button>
+  <button class="btn-ghost" style="width:100%;text-align:left;" onclick="togglePaymentSettings()">⚙ UPI Settings</button>
+  <button class="btn-ghost" style="width:100%;text-align:left;" onclick="toggleReportsPanel()">📊 Reports</button>
+  <button class="btn-ghost" style="width:100%;text-align:left;" onclick="exportInvoicesCSV()">⬇ Export CSV</button>
+  <button class="btn-ghost" style="width:100%;text-align:left;" onclick="setDashFilter('trash'); toggleMoreMenu();">🗑 Trash</button>
+  <button class="btn-ghost admin-only" style="display:none;width:100%;text-align:left;" onclick="toggleActivityLogPanel()">🗂 Activity Log</button>
+</div>
 <script>
 // Applied immediately (before the rest of the page renders) so there's no
 // flash of the wrong theme. Full logic — including the toggle button and
@@ -672,15 +684,6 @@
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;position:relative;">
         <div class="more-menu-wrap" style="position:relative;">
           <button class="btn-ghost" id="moreMenuBtn" onclick="toggleMoreMenu()">⋮ More</button>
-          <div id="dashMoreMenu" class="more-menu" style="display:none;">
-            <button class="btn-ghost install-app-btn" style="display:none;width:100%;text-align:left;" onclick="installApp()">⬇ Install App</button>
-            <button class="btn-ghost theme-toggle-btn" style="width:100%;text-align:left;" onclick="toggleTheme()">🌙 Dark mode</button>
-            <button class="btn-ghost" style="width:100%;text-align:left;" onclick="toggleBrandingSettings()">🖼 Branding</button>
-            <button class="btn-ghost" style="width:100%;text-align:left;" onclick="togglePaymentSettings()">⚙ UPI Settings</button>
-            <button class="btn-ghost" style="width:100%;text-align:left;" onclick="toggleReportsPanel()">📊 Reports</button>
-            <button class="btn-ghost" style="width:100%;text-align:left;" onclick="exportInvoicesCSV()">⬇ Export CSV</button>
-            <button class="btn-ghost admin-only" style="display:none;width:100%;text-align:left;" onclick="toggleActivityLogPanel()">🗂 Activity Log</button>
-          </div>
         </div>
         <button class="btn-ghost" onclick="handleLogout()">Log out</button>
         <button class="btn-ghost" onclick="openNewDocument('quote')">+ New Quotation</button>
@@ -801,6 +804,7 @@
   </div>
 
   <div class="list-count no-export" id="listCount"></div>
+  <div id="trashBar" class="no-export" style="display:none;"></div>
   <div id="invoiceList"></div>
   <div id="emptyState" class="empty-state" style="display:none;">
     <div class="big">No invoices yet</div>
@@ -2131,9 +2135,12 @@ async function renderDashboard(){
   empty.style.display = 'none';
   controls.style.display = '';
 
+  const activeList = list.filter(inv => !(inv.data && inv.data.deletedAt));
+  const trashList = list.filter(inv => inv.data && inv.data.deletedAt);
+
   // ---- totals across all saved invoices (quotations don't count as billed revenue) ----
   let sumBilled = 0, sumDue = 0;
-  const billedList = list.filter(inv => inv.data.kind !== 'quote');
+  const billedList = activeList.filter(inv => inv.data.kind !== 'quote');
   billedList.forEach(inv=>{
     const s = computeSummaryFromData(inv.data);
     sumBilled += s.total;
@@ -2151,9 +2158,19 @@ async function renderDashboard(){
 
   renderTrendChart(billedList);
 
+  // ---- trash action bar ----
+  const trashBar = document.getElementById('trashBar');
+  if(dashFilter === 'trash' && trashList.length > 0){
+    trashBar.style.display = '';
+    trashBar.innerHTML = `<span>🗑 ${trashList.length} item${trashList.length===1?'':'s'} in Trash — restore anytime, or empty it for good.</span><button class="btn-text" style="color:var(--danger);" onclick="emptyTrash()">Empty Trash</button>`;
+  } else {
+    trashBar.style.display = 'none';
+  }
+
   // ---- search + status filter ----
   const q = (document.getElementById('dashSearch').value || '').trim().toLowerCase();
-  let filtered = list.filter(inv=>{
+  const sourceList = dashFilter === 'trash' ? trashList : activeList;
+  let filtered = sourceList.filter(inv=>{
     const s = computeSummaryFromData(inv.data);
     if(dashFilter === 'due' && !(inv.data.kind !== 'quote' && s.balance > 0)) return false;
     if(dashFilter === 'settled' && !(inv.data.kind !== 'quote' && s.balance <= 0)) return false;
@@ -2168,7 +2185,40 @@ async function renderDashboard(){
   document.getElementById('listCount').textContent = filtered.length + (filtered.length===1?' invoice':' invoices') + (q || dashFilter!=='all' ? ' found' : '');
 
   if(filtered.length === 0){
-    wrap.innerHTML = `<div class="empty-state"><div class="big">No matches</div><div>Try a different search or filter.</div></div>`;
+    wrap.innerHTML = dashFilter === 'trash'
+      ? `<div class="empty-state"><div class="big">Trash is empty</div><div>Deleted invoices and quotations show up here.</div></div>`
+      : `<div class="empty-state"><div class="big">No matches</div><div>Try a different search or filter.</div></div>`;
+  } else if(dashFilter === 'trash'){
+    wrap.innerHTML = filtered.map(inv=>{
+      const s = computeSummaryFromData(inv.data);
+      const dateDisp = formatDMY(inv.data.invDate) || inv.data.invDate || '';
+      const clientName = escapeHtml(inv.data.contactName) || 'Untitled client';
+      const venue = escapeHtml(inv.data.venueName) || 'No venue set';
+      const isQuote = inv.data.kind === 'quote';
+      const invNumDisp = inv.data.invNumber ? escapeHtml(inv.data.invNumber) + ' &middot; ' : '';
+      const deletedWhen = formatDMY(new Date(inv.data.deletedAt).toISOString().slice(0,10));
+      return `
+        <div class="inv-card">
+          <div class="inv-card-main">
+            <div class="inv-avatar">${initials(inv.data.contactName)}</div>
+            <div class="inv-card-body">
+              <div class="inv-card-top">
+                <div class="inv-name">${clientName}</div>
+                <div class="inv-total">${fmt(s.total)}</div>
+              </div>
+              <div class="inv-card-meta">${invNumDisp}${venue} &middot; ${dateDisp}</div>
+              <div class="inv-card-bottom">
+                <span class="inv-badge trashed">${isQuote ? 'Quote' : 'Invoice'} · Deleted ${deletedWhen}</span>
+              </div>
+            </div>
+          </div>
+          <div class="inv-card-actions no-export">
+            <button class="btn-text" onclick="restoreInvoice('${inv.id}')">Restore</button>
+            <button class="btn-text" style="color:var(--danger);" onclick="permanentlyDeleteInvoice('${inv.id}')">Delete Forever</button>
+          </div>
+        </div>
+      `;
+    }).join('');
   } else {
     wrap.innerHTML = filtered.map(inv=>{
       const s = computeSummaryFromData(inv.data);
@@ -2296,12 +2346,50 @@ async function convertQuoteToInvoice(id){
 
 async function deleteInvoice(id){
   let proceed = true;
-  try{ proceed = confirm('Delete this invoice? This cannot be undone.'); }catch(e){}
+  try{ proceed = confirm('Move this to Trash? You can restore it later from the Trash view (⋮ More → Trash).'); }catch(e){}
+  if(!proceed) return;
+  let list = await loadInvoicesList();
+  const inv = list.find(x=>x.id===id);
+  if(!inv) return;
+  inv.data.deletedAt = Date.now();
+  inv.updatedAt = Date.now();
+  await persistInvoicesList(list);
+  logAuditEvent('invoice_deleted', { invoiceId: id });
+  renderDashboard();
+}
+
+async function restoreInvoice(id){
+  let list = await loadInvoicesList();
+  const inv = list.find(x=>x.id===id);
+  if(!inv) return;
+  delete inv.data.deletedAt;
+  inv.updatedAt = Date.now();
+  await persistInvoicesList(list);
+  logAuditEvent('invoice_restored', { invoiceId: id });
+  renderDashboard();
+}
+
+async function permanentlyDeleteInvoice(id){
+  let proceed = true;
+  try{ proceed = confirm('Permanently delete this? This cannot be undone — it will not be recoverable.'); }catch(e){}
   if(!proceed) return;
   let list = await loadInvoicesList();
   list = list.filter(x=>x.id!==id);
   await persistInvoicesList(list);
-  logAuditEvent('invoice_deleted', { invoiceId: id });
+  logAuditEvent('invoice_permanently_deleted', { invoiceId: id });
+  renderDashboard();
+}
+
+async function emptyTrash(){
+  let list = await loadInvoicesList();
+  const trashCount = list.filter(inv=>inv.data && inv.data.deletedAt).length;
+  if(trashCount === 0) return;
+  let proceed = true;
+  try{ proceed = confirm(`Permanently delete all ${trashCount} item(s) in Trash? This cannot be undone.`); }catch(e){}
+  if(!proceed) return;
+  list = list.filter(inv => !(inv.data && inv.data.deletedAt));
+  await persistInvoicesList(list);
+  logAuditEvent('trash_emptied', { count: trashCount });
   renderDashboard();
 }
 
@@ -2555,7 +2643,7 @@ document.addEventListener('click', (e)=>{
   const wrap = document.querySelector('.more-menu-wrap');
   const menu = document.getElementById('dashMoreMenu');
   if(!wrap || !menu || menu.style.display === 'none') return;
-  if(!wrap.contains(e.target)) menu.style.display = 'none';
+  if(!wrap.contains(e.target) && !menu.contains(e.target)) menu.style.display = 'none';
 });
 
 // ---------- INACTIVITY / AUTO LOGOUT ----------
