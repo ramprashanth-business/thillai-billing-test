@@ -331,6 +331,29 @@
   /* ---------- payment settings panel ---------- */
   #paymentSettingsPanel{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
   #paymentSettingsPanel .eyebrow2{font-family:'Manrope',sans-serif;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-soft);text-transform:uppercase;margin-bottom:10px;}
+
+  /* ---------- reports panel ---------- */
+  #reportsPanel{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
+  #reportsPanel .eyebrow2{font-family:'Manrope',sans-serif;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-soft);text-transform:uppercase;margin-bottom:4px;}
+  .report-sub{font-size:12px;color:var(--text-soft);margin-bottom:14px;}
+  .report-block{margin-bottom:18px;}
+  .report-block-title{font-family:'Manrope',sans-serif;font-weight:800;font-size:13px;color:var(--navy);margin-bottom:8px;}
+  .report-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13px;}
+  .report-row:last-child{border-bottom:none;}
+  .report-row .rr-name{color:var(--text);font-weight:600;}
+  .report-row .rr-sub{color:var(--text-soft);font-size:11.5px;margin-top:1px;}
+  .report-row .rr-val{font-weight:800;color:var(--navy);white-space:nowrap;}
+  .report-empty{font-size:12.5px;color:var(--text-soft);padding:6px 0;}
+
+  /* ---------- public shared-invoice view ---------- */
+  .public-view .no-export{display:none !important;}
+  .public-view #sheet input, .public-view #sheet textarea{pointer-events:none;}
+  #publicViewBanner{max-width:840px;margin:0 auto 16px;background:var(--navy);color:#fff;border-radius:14px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  #publicViewBanner .pvb-title{font-family:'Manrope',sans-serif;font-weight:800;font-size:16px;}
+  #publicViewBanner .pvb-sub{font-size:12px;color:#c3cbdb;margin-top:2px;}
+  #publicViewError{max-width:420px;margin:80px auto;text-align:center;padding:0 20px;}
+  #publicViewError .pve-title{font-family:'Manrope',sans-serif;font-weight:800;font-size:18px;color:var(--navy);margin-bottom:8px;}
+  #publicViewError .pve-msg{font-size:14px;color:var(--text-soft);}
   .sync-status{font-size:12.5px;margin-top:10px;font-weight:600;min-height:16px;}
   .sync-status.ok{color:var(--ok, #1a8f4c);}
   .sync-status.err{color:var(--danger);}
@@ -509,10 +532,30 @@
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button class="btn-ghost" onclick="togglePaymentSettings()">⚙ UPI Settings</button>
+        <button class="btn-ghost" onclick="toggleReportsPanel()">📊 Reports</button>
+        <button class="btn-ghost" onclick="exportInvoicesCSV()">⬇ Export CSV</button>
         <button class="btn-ghost" onclick="handleLogout()">Log out</button>
         <button class="btn-ghost" onclick="openNewDocument('quote')">+ New Quotation</button>
         <button class="btn-gold" onclick="openNewDocument('invoice')">+ New Invoice</button>
       </div>
+    </div>
+
+    <div id="reportsPanel" class="no-export" style="display:none;">
+      <div class="eyebrow2">Revenue Reports</div>
+      <div class="report-sub" id="reportsRange"></div>
+      <div class="report-block">
+        <div class="report-block-title">By Month</div>
+        <div id="reportMonthly"></div>
+      </div>
+      <div class="report-block">
+        <div class="report-block-title">Top Clients</div>
+        <div id="reportClients"></div>
+      </div>
+      <div class="report-block">
+        <div class="report-block-title">Top Services</div>
+        <div id="reportItems"></div>
+      </div>
+      <button class="btn-primary" onclick="exportInvoicesCSV()">⬇ Export All Invoices (CSV)</button>
     </div>
 
     <div id="paymentSettingsPanel" class="no-export" style="display:none;">
@@ -599,6 +642,17 @@
 </div>
 
 <div class="app" id="editorScreen" style="display:none;">
+  <div id="publicViewBanner" style="display:none;">
+    <div>
+      <div class="pvb-title">Thillai Decors and Events</div>
+      <div class="pvb-sub">Shared invoice — stays up to date automatically</div>
+    </div>
+    <button class="btn-gold" onclick="downloadPDF()">⬇ Download PDF</button>
+  </div>
+  <div id="publicViewError" style="display:none;">
+    <div class="pve-title">This link isn't available</div>
+    <div class="pve-msg" id="publicViewErrorMsg"></div>
+  </div>
   <div class="toolbar no-export">
     <div>
       <h1>Billing Studio</h1>
@@ -1173,13 +1227,14 @@ async function loadInvoicesList(){
     try{
       const { data, error } = await supabaseClient
         .from('invoices')
-        .select('id, updated_at, data')
+        .select('id, updated_at, data, is_public')
         .order('updated_at', { ascending:false });
       if(error) throw error;
       const list = (data||[]).map(row => ({
         id: row.id,
         updatedAt: Number(row.updated_at),
-        data: row.data
+        data: row.data,
+        isPublic: !!row.is_public
       }));
       // keep a local mirror as an offline backup
       persistInvoicesLocal(list);
@@ -1346,6 +1401,157 @@ function computeSummaryFromData(data){
   return { total, balance: total - adv };
 }
 
+function itemTotalFromData(it){
+  const q = parseFloat(it.qty) || 0;
+  const r = parseFloat((it.rate||'').toString().replace(/,/g,'')) || 0;
+  let subTotal = 0;
+  (it.subs||[]).forEach(s=>{
+    subTotal += (parseFloat(s.qty)||0) * (parseFloat((s.rate||'').toString().replace(/,/g,''))||0);
+  });
+  return q*r + subTotal;
+}
+
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// ---------- REVENUE REPORTS ----------
+function toggleReportsPanel(){
+  const panel = document.getElementById('reportsPanel');
+  const isHidden = panel.style.display === 'none';
+  if(isHidden) renderReportsPanel();
+  panel.style.display = isHidden ? '' : 'none';
+}
+
+async function renderReportsPanel(){
+  const list = await loadInvoicesList();
+  const real = list.filter(inv => inv.data && inv.data.kind !== 'quote');
+
+  const monthly = {};
+  const clientTotals = {};
+  const itemTotals = {};
+
+  real.forEach(inv=>{
+    const s = computeSummaryFromData(inv.data);
+    const dateStr = inv.data.invDate || '';
+    const key = dateStr ? dateStr.slice(0,7) : 'unknown';
+    if(!monthly[key]) monthly[key] = { billed:0, received:0, balance:0, count:0 };
+    monthly[key].billed += s.total;
+    monthly[key].balance += s.balance;
+    monthly[key].received += (s.total - s.balance);
+    monthly[key].count += 1;
+
+    const client = (inv.data.contactName||'').trim() || 'Unnamed client';
+    clientTotals[client] = (clientTotals[client]||0) + s.total;
+
+    (inv.data.items||[]).forEach(it=>{
+      const title = (it.title||'').trim();
+      if(!title) return;
+      itemTotals[title] = (itemTotals[title]||0) + itemTotalFromData(it);
+    });
+  });
+
+  const rangeEl = document.getElementById('reportsRange');
+  rangeEl.textContent = real.length
+    ? `Based on ${real.length} invoice${real.length===1?'':'s'} (quotations excluded)`
+    : 'No invoices yet.';
+
+  // ---- monthly table, most recent first ----
+  const monthlyEl = document.getElementById('reportMonthly');
+  const monthKeys = Object.keys(monthly).sort().reverse();
+  if(monthKeys.length === 0){
+    monthlyEl.innerHTML = '<div class="report-empty">Nothing to show yet.</div>';
+  } else {
+    monthlyEl.innerHTML = monthKeys.map(key=>{
+      const m = monthly[key];
+      let label = key;
+      if(key !== 'unknown'){
+        const [y, mo] = key.split('-');
+        label = MONTH_NAMES[parseInt(mo,10)-1] + ' ' + y;
+      } else {
+        label = 'No date set';
+      }
+      return `
+        <div class="report-row">
+          <div>
+            <div class="rr-name">${escapeHtml(label)}</div>
+            <div class="rr-sub">${m.count} invoice${m.count===1?'':'s'} &middot; ${fmt(m.received)} received</div>
+          </div>
+          <div class="rr-val">${fmt(m.billed)}</div>
+        </div>`;
+    }).join('');
+  }
+
+  // ---- top clients ----
+  const clientsEl = document.getElementById('reportClients');
+  const topClients = Object.entries(clientTotals).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  clientsEl.innerHTML = topClients.length
+    ? topClients.map(([name,total])=>`
+        <div class="report-row">
+          <div class="rr-name">${escapeHtml(name)}</div>
+          <div class="rr-val">${fmt(total)}</div>
+        </div>`).join('')
+    : '<div class="report-empty">Nothing to show yet.</div>';
+
+  // ---- top services/items ----
+  const itemsEl = document.getElementById('reportItems');
+  const topItems = Object.entries(itemTotals).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  itemsEl.innerHTML = topItems.length
+    ? topItems.map(([name,total])=>`
+        <div class="report-row">
+          <div class="rr-name">${escapeHtml(name)}</div>
+          <div class="rr-val">${fmt(total)}</div>
+        </div>`).join('')
+    : '<div class="report-empty">Nothing to show yet.</div>';
+}
+
+// ---------- CSV EXPORT ----------
+function csvEscape(val){
+  const s = (val===undefined || val===null) ? '' : String(val);
+  if(/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+  return s;
+}
+
+async function exportInvoicesCSV(){
+  const list = await loadInvoicesList();
+  if(list.length === 0){ alert('No invoices to export yet.'); return; }
+  const rows = [[
+    'Type','Number','Date','Client Name','Phone','Venue','Event Date',
+    'Total','Advance Paid','Balance Due','Status'
+  ]];
+  list
+    .slice()
+    .sort((a,b)=> (a.data.invDate||'').localeCompare(b.data.invDate||''))
+    .forEach(inv=>{
+      const d = inv.data || {};
+      const s = computeSummaryFromData(d);
+      const isQuote = d.kind === 'quote';
+      const advPaid = s.total - s.balance;
+      const status = isQuote ? 'Quotation' : (s.balance > 0 ? 'Due' : 'Fully Paid');
+      rows.push([
+        isQuote ? 'Quotation' : 'Invoice',
+        d.invNumber || '',
+        formatDMY(d.invDate) || d.invDate || '',
+        d.contactName || '',
+        d.phoneNo || '',
+        d.venueName || '',
+        d.eventDate || '',
+        s.total.toFixed(2),
+        advPaid.toFixed(2),
+        s.balance.toFixed(2),
+        status
+      ]);
+    });
+  const csv = rows.map(r => r.map(csvEscape).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'thillai-invoices-' + new Date().toISOString().slice(0,10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 let dashFilter = 'all';
 
 function setDashFilter(f){
@@ -1478,6 +1684,57 @@ function onClientNameInput(value){
   }
 }
 
+// ---------- SHAREABLE LIVE LINK ----------
+function buildViewUrl(id){
+  return location.origin + location.pathname + '?view=' + encodeURIComponent(id);
+}
+
+async function setInvoicePublic(id, isPublic){
+  if(!supabaseClient){
+    alert('Shareable links need the cloud database connected — this device is running in local-only mode.');
+    return false;
+  }
+  try{
+    const { error } = await supabaseClient.from('invoices').update({ is_public: isPublic }).eq('id', id);
+    if(error) throw error;
+    return true;
+  }catch(e){
+    console.error('Could not update link sharing state', e);
+    alert('Could not update the share link. ' + (e && e.message ? e.message : ''));
+    return false;
+  }
+}
+
+async function shareInvoiceLink(id, alreadyPublic){
+  if(!alreadyPublic){
+    const ok = await setInvoicePublic(id, true);
+    if(!ok) return;
+  }
+  const url = buildViewUrl(id);
+  const shareData = { title: 'Invoice from Thillai Decors and Events', text: 'Here is your invoice — this link stays up to date with any payments received.', url };
+  if(navigator.share){
+    try{
+      await navigator.share(shareData);
+      renderDashboard();
+      return;
+    }catch(e){
+      if(e && e.name === 'AbortError'){ renderDashboard(); return; }
+    }
+  }
+  try{
+    await navigator.clipboard.writeText(url);
+    alert('Shareable link copied to clipboard:\n\n' + url);
+  }catch(e){
+    prompt('Copy this link to share:', url);
+  }
+  renderDashboard();
+}
+
+async function revokeInvoiceLink(id){
+  const ok = await setInvoicePublic(id, false);
+  if(ok) renderDashboard();
+}
+
 async function renderDashboard(){
   let list = await loadInvoicesList();
   list = await backfillInvoiceNumbers(list);
@@ -1570,7 +1827,10 @@ async function renderDashboard(){
           </div>
           <div class="inv-card-actions no-export">
             <button class="btn-text" onclick="openEditInvoice('${inv.id}')">Edit</button>
-            <button class="btn-text" onclick="shareInvoicePDF('${inv.id}')">Share</button>
+            <button class="btn-text" onclick="shareInvoicePDF('${inv.id}')">Share PDF</button>
+            ${inv.isPublic
+              ? `<button class="btn-text" style="color:#4a5ee0;" onclick="shareInvoiceLink('${inv.id}', true)">🔗 Copy Link</button><button class="btn-text" onclick="revokeInvoiceLink('${inv.id}')">Revoke Link</button>`
+              : `<button class="btn-text" onclick="shareInvoiceLink('${inv.id}', false)">🔗 Share Link</button>`}
             ${isQuote ? `<button class="btn-text" onclick="convertQuoteToInvoice('${inv.id}')">Convert to Invoice</button>` : ''}
             <button class="btn-text" onclick="duplicateInvoice('${inv.id}')">Duplicate</button>
             <button class="btn-text" style="color:var(--danger);" onclick="deleteInvoice('${inv.id}')">Delete</button>
@@ -1782,7 +2042,60 @@ async function initApp(){
   }
   await enterApp();
 }
-initApp();
+
+function showPublicViewError(msg){
+  document.body.classList.add('public-view');
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('dashboardScreen').style.display = 'none';
+  document.getElementById('editorScreen').style.display = '';
+  document.getElementById('sheet').style.display = 'none';
+  document.getElementById('publicViewBanner').style.display = 'none';
+  document.getElementById('publicViewErrorMsg').textContent = msg;
+  document.getElementById('publicViewError').style.display = '';
+}
+
+// Renders a single invoice, read-only, with no login required — used when
+// someone opens a link that was generated via the dashboard's Share Link
+// button. Only works if that invoice was explicitly marked shareable
+// (is_public = true); anything else shows a friendly "not available" message.
+async function renderPublicView(id){
+  document.body.classList.add('public-view');
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('dashboardScreen').style.display = 'none';
+  document.getElementById('editorScreen').style.display = '';
+
+  if(!supabaseClient){
+    showPublicViewError('This app isn\'t connected to a database, so shared links can\'t be opened here.');
+    return;
+  }
+  try{
+    await syncSettingsFromCloud(); // so the UPI QR / bank box show up for the client too
+    const { data, error } = await supabaseClient
+      .from('invoices')
+      .select('data, is_public')
+      .eq('id', id)
+      .maybeSingle();
+    if(error) throw error;
+    if(!data || !data.is_public){
+      showPublicViewError('This invoice link has been turned off by the sender, or the link is incorrect.');
+      return;
+    }
+    loadInvoiceIntoEditor(data.data);
+    document.getElementById('publicViewBanner').style.display = '';
+    document.getElementById('publicViewError').style.display = 'none';
+    document.getElementById('sheet').style.display = '';
+  }catch(e){
+    console.error('Could not load shared invoice', e);
+    showPublicViewError('Could not load this invoice right now. Please try again in a moment.');
+  }
+}
+
+const viewParam = new URLSearchParams(location.search).get('view');
+if(viewParam){
+  renderPublicView(viewParam);
+} else {
+  initApp();
+}
 
 // ---------- EXPORT ----------
 async function withExportMode(fn){
