@@ -451,7 +451,7 @@
   /* ---------- dashboard ---------- */
   #dashboardScreen{max-width:880px;}
   #dashboardScreen .btns.btns-1col{grid-template-columns:1fr;}
-  .more-menu{position:absolute;top:calc(100% + 6px);right:0;background:var(--paper);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(21,34,56,.15);padding:6px;min-width:190px;z-index:50;display:flex;flex-direction:column;gap:2px;}
+  .more-menu{position:fixed;background:var(--paper);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(21,34,56,.25);padding:6px;min-width:190px;max-width:calc(100vw - 16px);max-height:70vh;overflow-y:auto;z-index:9999;display:flex;flex-direction:column;gap:2px;}
 
   /* ---------- auth / login ---------- */
   .auth-app{max-width:400px;padding-top:60px;}
@@ -671,7 +671,7 @@
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;position:relative;">
         <div class="more-menu-wrap" style="position:relative;">
-          <button class="btn-ghost" onclick="toggleMoreMenu()">⋮ More</button>
+          <button class="btn-ghost" id="moreMenuBtn" onclick="toggleMoreMenu()">⋮ More</button>
           <div id="dashMoreMenu" class="more-menu" style="display:none;">
             <button class="btn-ghost install-app-btn" style="display:none;width:100%;text-align:left;" onclick="installApp()">⬇ Install App</button>
             <button class="btn-ghost theme-toggle-btn" style="width:100%;text-align:left;" onclick="toggleTheme()">🌙 Dark mode</button>
@@ -2511,8 +2511,27 @@ async function initApp(){
 // ---------- DASHBOARD "MORE" MENU ----------
 function toggleMoreMenu(){
   const menu = document.getElementById('dashMoreMenu');
-  if(!menu) return;
-  menu.style.display = menu.style.display === 'none' ? '' : 'none';
+  const btn = document.getElementById('moreMenuBtn');
+  if(!menu || !btn) return;
+  const isOpening = menu.style.display === 'none' || !menu.style.display;
+  if(isOpening){
+    const r = btn.getBoundingClientRect();
+    const menuWidth = Math.min(210, window.innerWidth - 16);
+    let left = r.right - menuWidth;
+    left = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
+    let top = r.bottom + 6;
+    menu.style.width = menuWidth + 'px';
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+    menu.style.display = '';
+    // If it would run off the bottom of the screen, flip it above the button instead.
+    const menuRect = menu.getBoundingClientRect();
+    if(menuRect.bottom > window.innerHeight - 8){
+      menu.style.top = Math.max(8, r.top - menuRect.height - 6) + 'px';
+    }
+  } else {
+    menu.style.display = 'none';
+  }
 }
 document.addEventListener('click', (e)=>{
   const wrap = document.querySelector('.more-menu-wrap');
@@ -2731,6 +2750,10 @@ async function withExportMode(fn){
   const sheet = document.getElementById('sheet');
   document.body.classList.add('exporting');
   sheet.querySelectorAll('textarea').forEach(autoGrow);
+  // Guarantee a freshly-painted QR canvas exists right before we snapshot —
+  // this is what stampQrOntoCanvas() will read from further down the line.
+  updateUpiQr();
+  updateBankDetails();
   try{
     if(document.fonts && document.fonts.ready){
       await Promise.all([
