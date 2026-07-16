@@ -590,6 +590,13 @@
   }
   .empty-state .big{font-family:'Manrope',sans-serif;font-weight:700;font-size:16px;color:var(--text);margin-bottom:6px;}
   .storage-note{font-size:11px;color:var(--text-soft);text-align:center;margin-top:14px;}
+  .user-row{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--card-alt-bg);}
+  .user-row-email{font-weight:700;font-size:13.5px;word-break:break-all;}
+  .user-row-sub{font-size:11.5px;color:var(--text-soft);margin-top:2px;}
+  .user-row-perms{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0;font-size:12.5px;}
+  .user-row-perms label{display:flex;align-items:center;gap:5px;cursor:pointer;}
+  .user-row-role{margin:8px 0;font-size:12.5px;display:flex;align-items:center;gap:8px;}
+  .user-row-role select{padding:4px 6px;border-radius:6px;border:1px solid var(--line);background:var(--input-bg);color:var(--text);}
 </style>
 </head>
 <body>
@@ -603,6 +610,7 @@
   <button class="btn-ghost" style="width:100%;text-align:left;" onclick="exportInvoicesCSV()">⬇ Export CSV</button>
   <button class="btn-ghost" style="width:100%;text-align:left;" onclick="setDashFilter('trash'); toggleMoreMenu();">🗑 Trash</button>
   <button class="btn-ghost admin-only" style="display:none;width:100%;text-align:left;" onclick="toggleActivityLogPanel()">🗂 Activity Log</button>
+  <button class="btn-ghost admin-only" style="display:none;width:100%;text-align:left;" onclick="toggleManageUsersPanel()">👤 Manage Users</button>
 </div>
 <script>
 // Applied immediately (before the rest of the page renders) so there's no
@@ -668,6 +676,23 @@
   </div>
 </div>
 
+<div class="app auth-app" id="pendingApprovalScreen" style="display:none;">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="brand-mark"><span>TD</span></div>
+      <div>
+        <div class="auth-brand-name">Thillai Billing</div>
+        <div class="auth-brand-sub">Waiting for approval</div>
+      </div>
+    </div>
+    <p style="color:var(--text-soft);font-size:14px;line-height:1.5;margin:0 0 16px;">
+      Your account has been created, but an admin needs to approve it before you can sign in.
+      Please check back later or contact your admin.
+    </p>
+    <button class="btn-ghost" style="width:100%;" onclick="handleLogout()">Back to sign in</button>
+  </div>
+</div>
+
 <div id="inactivityWarning" class="modal-overlay" style="display:none;">
   <div class="modal-card">
     <h3 style="margin:0 0 8px;">Still there?</h3>
@@ -697,8 +722,8 @@
           <button class="btn-ghost" id="moreMenuBtn" onclick="toggleMoreMenu()">⋮ More</button>
         </div>
         <button class="btn-ghost" onclick="handleLogout()">Log out</button>
-        <button class="btn-ghost" onclick="openNewDocument('quote')">+ New Quotation</button>
-        <button class="btn-gold" onclick="openNewDocument('invoice')">+ New Invoice</button>
+        <button class="btn-ghost add-doc-btn" onclick="openNewDocument('quote')">+ New Quotation</button>
+        <button class="btn-gold add-doc-btn" onclick="openNewDocument('invoice')">+ New Invoice</button>
       </div>
     </div>
 
@@ -738,6 +763,12 @@
       <div class="eyebrow2">Activity Log (admin only)</div>
       <div class="report-sub">Sign-ins, sign-outs and setting changes, most recent first.</div>
       <div id="activityLogList" style="margin-top:10px;font-size:13px;"></div>
+    </div>
+
+    <div id="manageUsersPanel" class="no-export admin-only" style="display:none;">
+      <div class="eyebrow2">Manage Users (admin only)</div>
+      <div class="report-sub">Approve new sign-ups and set what each person can do. Tap Save on a row to apply changes.</div>
+      <div id="manageUsersList" style="margin-top:10px;"></div>
     </div>
 
     <div id="paymentSettingsPanel" class="no-export" style="display:none;">
@@ -2099,6 +2130,7 @@ async function setInvoicePublic(id, isPublic){
 }
 
 async function shareInvoiceLink(id, alreadyPublic){
+  if(!currentUserPermissions.can_share){ showToast("You don't have permission to share invoices.", 'err'); return; }
   if(!alreadyPublic){
     const ok = await setInvoicePublic(id, true);
     if(!ok) return;
@@ -2124,6 +2156,7 @@ async function shareInvoiceLink(id, alreadyPublic){
 }
 
 async function revokeInvoiceLink(id){
+  if(!currentUserPermissions.can_share){ showToast("You don't have permission to share invoices.", 'err'); return; }
   const ok = await setInvoicePublic(id, false);
   if(ok) renderDashboard();
 }
@@ -2303,6 +2336,7 @@ async function generateInvoiceNumber(kind){
 }
 
 async function openNewDocument(kind){
+  if(!currentUserPermissions.can_add){ showToast("You don't have permission to add invoices.", 'err'); return; }
   currentInvoiceId = null;
   const data = blankInvoiceData(kind);
   data.invNumber = await generateInvoiceNumber(kind);
@@ -2315,6 +2349,7 @@ async function openNewInvoice(){
 }
 
 async function openEditInvoice(id){
+  if(!currentUserPermissions.can_edit){ showToast("You don't have permission to edit invoices.", 'err'); return; }
   const list = await loadInvoicesList();
   const inv = list.find(x=>x.id===id);
   if(!inv) return;
@@ -2362,6 +2397,7 @@ async function convertQuoteToInvoice(id){
 }
 
 async function deleteInvoice(id){
+  if(!currentUserPermissions.can_delete){ showToast("You don't have permission to delete invoices.", 'err'); return; }
   let proceed = true;
   try{ proceed = confirm('Move this to Trash? You can restore it later from the Trash view (⋮ More → Trash).'); }catch(e){}
   if(!proceed) return;
@@ -2389,6 +2425,7 @@ async function restoreInvoice(id){
 }
 
 async function permanentlyDeleteInvoice(id){
+  if(!currentUserPermissions.can_delete){ showToast("You don't have permission to delete invoices.", 'err'); return; }
   let proceed = true;
   try{ proceed = confirm('Permanently delete this? This cannot be undone — it will not be recoverable.'); }catch(e){}
   if(!proceed) return;
@@ -2518,6 +2555,8 @@ async function submitAuth(){
         await logAuditEvent('login_failed', { email });
         throw error;
       }
+      const approved = await checkApprovedOrBlock();
+      if(!approved) return;
       await logAuditEvent('login_success', { email });
       await enterApp();
     } else {
@@ -2525,10 +2564,12 @@ async function submitAuth(){
       if(error) throw error;
       if(data.session){
         await logAuditEvent('signup', { email });
+        const approved = await checkApprovedOrBlock();
+        if(!approved) return;
         await enterApp();
       } else {
         errEl.style.color = 'var(--amber)';
-        errEl.textContent = 'Account created — check your email to confirm, then sign in.';
+        errEl.textContent = 'Account created — check your email to confirm. An admin will also need to approve your account before you can sign in.';
         authMode = 'signin';
         renderAuthMode();
       }
@@ -2577,6 +2618,7 @@ function showResetPasswordScreen(){
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('dashboardScreen').style.display = 'none';
   document.getElementById('editorScreen').style.display = 'none';
+  document.getElementById('pendingApprovalScreen').style.display = 'none';
   document.getElementById('resetPasswordScreen').style.display = '';
 }
 
@@ -2618,6 +2660,7 @@ async function handleLogout(reason){
 function showLoginScreen(){
   document.getElementById('loginScreen').style.display = '';
   document.getElementById('resetPasswordScreen').style.display = 'none';
+  document.getElementById('pendingApprovalScreen').style.display = 'none';
   document.getElementById('dashboardScreen').style.display = 'none';
   document.getElementById('editorScreen').style.display = 'none';
 }
@@ -2625,9 +2668,13 @@ function showLoginScreen(){
 async function enterApp(){
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('resetPasswordScreen').style.display = 'none';
+  document.getElementById('pendingApprovalScreen').style.display = 'none';
   document.getElementById('editorScreen').style.display = 'none';
   document.getElementById('dashboardScreen').style.display = '';
   await loadCurrentUserAndRole();
+  document.querySelectorAll('.add-doc-btn').forEach(el=>{
+    el.style.display = currentUserPermissions.can_add ? '' : 'none';
+  });
   startInactivityWatch();
   syncSettingsFromCloud();
   let list = await loadInvoicesList();
@@ -2644,10 +2691,14 @@ async function enterApp(){
 // UI (like the login/activity log) checks currentUserRole before showing.
 let currentUser = null;
 let currentUserRole = 'user';
+// Defaults are permissive so the app still works normally for anyone using
+// it before the `profiles` table has the new permission columns.
+let currentUserPermissions = { can_add:true, can_edit:true, can_download:true, can_delete:true, can_share:true };
 
 async function loadCurrentUserAndRole(){
   currentUser = null;
   currentUserRole = 'user';
+  currentUserPermissions = { can_add:true, can_edit:true, can_download:true, can_delete:true, can_share:true };
   if(!supabaseClient) return;
   try{
     const { data: { user } } = await supabaseClient.auth.getUser();
@@ -2655,11 +2706,17 @@ async function loadCurrentUserAndRole(){
     currentUser = user;
     const { data, error } = await supabaseClient
       .from('profiles')
-      .select('role')
+      .select('role, can_add, can_edit, can_download, can_delete, can_share')
       .eq('id', user.id)
       .maybeSingle();
-    if(!error && data && data.role){
-      currentUserRole = data.role;
+    if(!error && data){
+      if(data.role) currentUserRole = data.role;
+      // Admins always have full access regardless of the checkboxes.
+      if(currentUserRole !== 'admin'){
+        ['can_add','can_edit','can_download','can_delete','can_share'].forEach(k=>{
+          if(typeof data[k] === 'boolean') currentUserPermissions[k] = data[k];
+        });
+      }
     }
   }catch(e){
     console.error('Could not load user role', e);
@@ -2667,6 +2724,34 @@ async function loadCurrentUserAndRole(){
   document.querySelectorAll('.admin-only').forEach(el=>{
     el.style.display = currentUserRole === 'admin' ? '' : 'none';
   });
+}
+
+// Checks the `profiles.approved` flag for the just-signed-in user. If it's
+// false (a new sign-up nobody has approved yet), signs them back out and
+// shows the "waiting for approval" screen instead of letting them in.
+async function checkApprovedOrBlock(){
+  if(!supabaseClient) return true;
+  try{
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if(!user) return true;
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('approved')
+      .eq('id', user.id)
+      .maybeSingle();
+    if(!error && data && data.approved === false){
+      await supabaseClient.auth.signOut();
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('dashboardScreen').style.display = 'none';
+      document.getElementById('editorScreen').style.display = 'none';
+      document.getElementById('resetPasswordScreen').style.display = 'none';
+      document.getElementById('pendingApprovalScreen').style.display = '';
+      return false;
+    }
+  }catch(e){
+    console.error('Could not check approval status', e);
+  }
+  return true;
 }
 
 // ---------- INIT ----------
@@ -2681,6 +2766,8 @@ async function initApp(){
       showLoginScreen();
       return;
     }
+    const approved = await checkApprovedOrBlock();
+    if(!approved) return;
   }
   await enterApp();
 }
@@ -2885,6 +2972,90 @@ async function loadActivityLog(){
   }
 }
 
+// ---------- MANAGE USERS PANEL (admin only) ----------
+// Lets an admin approve pending sign-ups and set what each user is allowed
+// to do (add / edit / download / share / delete), all via checkboxes stored
+// on that person's row in `profiles`. Uses the anon key + RLS (a normal user
+// can only ever read/update their own row; only admins can read/update
+// everyone's), so no service-role key or server function is needed.
+function toggleManageUsersPanel(){
+  const panel = document.getElementById('manageUsersPanel');
+  if(!panel) return;
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? '' : 'none';
+  if(show) loadUsersList();
+}
+
+async function loadUsersList(){
+  const wrap = document.getElementById('manageUsersList');
+  if(!wrap || !supabaseClient) return;
+  wrap.textContent = 'Loading…';
+  try{
+    const { data, error } = await supabaseClient
+      .from('profiles')
+      .select('id, email, role, approved, can_add, can_edit, can_download, can_delete, can_share')
+      .order('email');
+    if(error) throw error;
+    renderUsersList(data || []);
+  }catch(e){
+    wrap.textContent = 'Could not load users (has the profiles table been updated with the new columns yet? See the setup SQL).';
+    console.error(e);
+  }
+}
+
+function renderUsersList(users){
+  const wrap = document.getElementById('manageUsersList');
+  if(!wrap) return;
+  if(users.length === 0){ wrap.textContent = 'No users yet.'; return; }
+  wrap.innerHTML = users.map(u=>{
+    const uid = escapeHtml(u.id);
+    const perm = (key, label) => `
+      <label><input type="checkbox" data-uid="${uid}" data-key="${key}" ${u[key] ? 'checked' : ''}> ${label}</label>`;
+    return `
+      <div class="user-row" data-user-row="${uid}">
+        <div class="user-row-email">${escapeHtml(u.email || '(no email)')}</div>
+        <div class="user-row-sub">${u.approved ? '✓ Approved' : '⏳ Pending approval'}</div>
+        <div class="user-row-role">
+          <span>Role:</span>
+          <select data-uid="${uid}" data-key="role">
+            <option value="user" ${u.role !== 'admin' ? 'selected' : ''}>User</option>
+            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+          </select>
+          <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" data-uid="${uid}" data-key="approved" ${u.approved ? 'checked' : ''}> Approved</label>
+        </div>
+        <div class="user-row-perms">
+          ${perm('can_add','Add')}
+          ${perm('can_edit','Edit')}
+          ${perm('can_download','Download')}
+          ${perm('can_delete','Delete')}
+          ${perm('can_share','Share')}
+        </div>
+        <button class="btn-primary" style="width:100%;" onclick="saveUserRow('${uid}')">Save</button>
+      </div>`;
+  }).join('');
+}
+
+async function saveUserRow(uid){
+  const rowEl = document.querySelector(`[data-user-row="${uid}"]`);
+  if(!rowEl || !supabaseClient) return;
+  const update = {};
+  rowEl.querySelectorAll('[data-key]').forEach(el=>{
+    const key = el.dataset.key;
+    if(el.tagName === 'SELECT'){ update[key] = el.value; }
+    else if(el.type === 'checkbox'){ update[key] = el.checked; }
+  });
+  try{
+    const { error } = await supabaseClient.from('profiles').update(update).eq('id', uid);
+    if(error) throw error;
+    await logAuditEvent('user_permissions_updated', { userId: uid, changes: update });
+    showToast('✓ User updated');
+    loadUsersList();
+  }catch(e){
+    showToast('⚠ Could not update user: ' + ((e && e.message) || 'unknown error'), 'err');
+    console.error(e);
+  }
+}
+
 function showPublicViewError(msg){
   document.body.classList.add('public-view');
   document.getElementById('loginScreen').style.display = 'none';
@@ -2967,6 +3138,7 @@ async function withExportMode(fn){
 }
 
 async function downloadJPG(){
+  if(!currentUserPermissions.can_download){ showToast("You don't have permission to download invoices.", 'err'); return; }
   await withExportMode(async (sheet)=>{
     const canvas = await html2canvas(sheet, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     await stampQrOntoCanvas(sheet, canvas);
@@ -3181,6 +3353,7 @@ async function buildInvoicePDF(sheet){
 }
 
 async function downloadPDF(){
+  if(!currentUserPermissions.can_download){ showToast("You don't have permission to download invoices.", 'err'); return; }
   await withExportMode(async (sheet)=>{
     const pdf = await buildInvoicePDF(sheet);
     const filename = buildInvoiceFileName({
@@ -3195,6 +3368,7 @@ async function downloadPDF(){
 // dashboard card, without leaving the dashboard screen. Renders the invoice
 // off-screen using the same editor markup used for the open invoice.
 async function shareInvoicePDF(id){
+  if(!currentUserPermissions.can_share){ showToast("You don't have permission to share invoices.", 'err'); return; }
   const list = await loadInvoicesList();
   const inv = list.find(x=>x.id===id);
   if(!inv) return;
