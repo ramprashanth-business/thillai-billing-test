@@ -1417,7 +1417,7 @@ async function removeBrandingLogo(){
   await persistSettingsCloud(s, 'brandingSyncStatus');
 }
 
-function updateUpiQr(){
+async function updateUpiQr(){
   const box = document.getElementById('upiQrBox');
   const codeEl = document.getElementById('upiQrCode');
   if(!box || !codeEl) return;
@@ -1454,6 +1454,10 @@ function updateUpiQr(){
       img.height = 120;
       img.alt = 'UPI QR code';
       codeEl.appendChild(img);
+      // Make sure the image is actually decoded and paintable before any
+      // export snapshot runs — otherwise a fast html2canvas capture can
+      // catch it mid-decode and render a blank square.
+      try{ await img.decode(); }catch(e){}
     } else if(tempEl.firstChild){
       // very old browser without canvas support — fall back to whatever qrcode.js made
       codeEl.appendChild(tempEl.firstChild);
@@ -2856,9 +2860,12 @@ async function withExportMode(fn){
   const sheet = document.getElementById('sheet');
   document.body.classList.add('exporting');
   sheet.querySelectorAll('textarea').forEach(autoGrow);
-  // Guarantee a freshly-painted QR canvas exists right before we snapshot —
-  // this is what stampQrOntoCanvas() will read from further down the line.
-  updateUpiQr();
+  // Pull the latest UPI/bank details from the cloud right now, rather than
+  // trusting whatever background sync may or may not have finished by this
+  // point (e.g. a fresh device, cleared cache, or just a very fast click) —
+  // this is what was causing the QR to sometimes go missing on export.
+  await syncSettingsFromCloud();
+  await updateUpiQr();
   updateBankDetails();
   try{
     if(document.fonts && document.fonts.ready){
@@ -2878,6 +2885,7 @@ async function withExportMode(fn){
 async function downloadJPG(){
   await withExportMode(async (sheet)=>{
     const canvas = await html2canvas(sheet, {scale:2, backgroundColor:'#ffffff', useCORS:true});
+    await stampQrOntoCanvas(sheet, canvas);
     const link = document.createElement('a');
     link.download = 'thillai-invoice.jpg';
     link.href = canvas.toDataURL('image/jpeg', 0.95);
@@ -2885,10 +2893,38 @@ async function downloadJPG(){
   });
 }
 
-// NOTE: the UPI QR used to be a raw <canvas> drawn by qrcode.js, which
-// html2canvas could intermittently fail to capture. updateUpiQr() now stores
-// it as a plain <img> instead, which html2canvas captures reliably — so no
-// extra "stamp it on afterward" step is needed here anymore.
+// html2canvas is known to sometimes fail to capture an <img> that was just
+// inserted with a data-URL src right before the snapshot — it clones the page
+// into its own hidden iframe and doesn't always wait for that clone's image
+// to finish decoding. Rather than keep depending on html2canvas noticing it,
+// we draw the QR onto the exported canvas ourselves afterward, from a fresh,
+// explicitly-decoded Image — this no longer depends on html2canvas at all,
+// so it can't go blank regardless of that quirk.
+async function stampQrOntoCanvas(sheet, canvas){
+  const qrBox = document.getElementById('upiQrBox');
+  const qrImg = sheet.querySelector('#upiQrCode img');
+  if(!qrBox || !qrImg || qrBox.style.display === 'none' || !qrImg.src) return;
+  try{
+    const freshImg = new Image();
+    freshImg.src = qrImg.src;
+    if(freshImg.decode){ await freshImg.decode(); }
+    else { await new Promise((res,rej)=>{ freshImg.onload = res; freshImg.onerror = rej; }); }
+    const sheetRect = sheet.getBoundingClientRect();
+    const qrRect = qrImg.getBoundingClientRect();
+    const scaleX = canvas.width / sheetRect.width;
+    const scaleY = canvas.height / sheetRect.height;
+    const x = (qrRect.left - sheetRect.left) * scaleX;
+    const y = (qrRect.top - sheetRect.top) * scaleY;
+    const w = qrRect.width * scaleX;
+    const h = qrRect.height * scaleY;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x, y, w, h);
+    ctx.drawImage(freshImg, x, y, w, h);
+  }catch(e){
+    console.error('Could not stamp UPI QR onto exported image', e);
+  }
+}
 
 // ---------- FILE NAMING ----------
 function sanitizeFileName(str){
@@ -2925,6 +2961,7 @@ async function shareOrDownloadPDF(pdf, filename){
 
 async function buildInvoicePDF(sheet){
     const canvas = await html2canvas(sheet, {scale:2, backgroundColor:'#ffffff', useCORS:true});
+    await stampQrOntoCanvas(sheet, canvas);
     const { jsPDF } = window.jspdf;
     const pdfWidth = 210;
     const pageHeightMm = 297;
