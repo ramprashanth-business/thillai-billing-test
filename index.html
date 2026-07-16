@@ -2973,6 +2973,7 @@ async function buildInvoicePDF(sheet){
     // nudged to fall between them instead of straight through the middle of one.
     const sheetRect = sheet.getBoundingClientRect();
     const scaleY = canvas.height / sheetRect.height;
+    const scaleX = canvas.width / sheetRect.width;
     const blockEls = sheet.querySelectorAll('.band, .info-grid, .items-table thead, .item, .sub-row, .comp-box, .summary, .balance-box, .upi-qr-box, .bank-details-box, .footer');
     const blocks = Array.from(blockEls).map(el=>{
       const r = el.getBoundingClientRect();
@@ -2981,6 +2982,26 @@ async function buildInvoicePDF(sheet){
         bottom: (r.bottom - sheetRect.top) * scaleY
       };
     }).sort((a,b)=>a.top-b.top);
+
+    // Also record the QR's own exact position and raw PNG data. On top of
+    // whatever ends up in the flattened page screenshot, we embed this as its
+    // own real image resource directly in the PDF further down — that doesn't
+    // depend on html2canvas (or JPEG re-compression) capturing it at all, so
+    // the QR can no longer go missing or come out blurry.
+    let qrEmbed = null;
+    const qrBoxEl = document.getElementById('upiQrBox');
+    const qrImgEl = sheet.querySelector('#upiQrCode img');
+    if(qrBoxEl && qrImgEl && qrBoxEl.style.display !== 'none' && qrImgEl.src){
+      const qr = qrImgEl.getBoundingClientRect();
+      qrEmbed = {
+        src: qrImgEl.src,
+        top: (qr.top - sheetRect.top) * scaleY,
+        bottom: (qr.bottom - sheetRect.top) * scaleY,
+        left: (qr.left - sheetRect.left) * scaleX,
+        width: qr.width * scaleX,
+        height: qr.height * scaleY
+      };
+    }
 
     // Table header + table extent, so the header row can be reprinted (with a
     // little breathing room) at the top of any page that continues the item list.
@@ -3049,6 +3070,24 @@ async function buildInvoicePDF(sheet){
       const sliceHeightMm = totalPageHeightPx / pxPerMm;
       if(!firstPage) pdf.addPage();
       pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, sliceHeightMm);
+
+      // If the QR sits within this page's slice, embed a crisp copy of it as
+      // its own real image directly on the PDF page, on top of the flattened
+      // screenshot above — independent of whether that screenshot happened
+      // to capture it correctly.
+      if(qrEmbed && qrEmbed.top < pageEnd - 1 && qrEmbed.bottom > currentY + 1){
+        const qrYOnPagePx = (qrEmbed.top - currentY) + yOffset;
+        try{
+          pdf.addImage(qrEmbed.src, 'PNG',
+            qrEmbed.left / pxPerMm,
+            qrYOnPagePx / pxPerMm,
+            qrEmbed.width / pxPerMm,
+            qrEmbed.height / pxPerMm);
+        }catch(e){
+          console.error('Could not embed UPI QR directly into the PDF', e);
+        }
+      }
+
       firstPage = false;
 
       currentY += contentHeightPx;
