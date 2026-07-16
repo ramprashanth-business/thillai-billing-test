@@ -237,7 +237,7 @@
     border-radius:6px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;margin:2px auto 0;
   }
   .item-title{
-    width:100%;border:none;background:transparent;font-family:'Times New Roman', Times, serif;font-weight:700;font-size:16px;color:#000;
+    width:100%;border:none;background:transparent;font-family:'Inter',sans-serif;font-weight:700;font-size:15px;color:var(--text);
     padding:1px 0 2px;min-width:0;
   }
   .qty-input, .rate-input{
@@ -354,7 +354,7 @@
   .adv-line .btn-remove{width:22px;height:22px;min-width:22px;min-height:22px;padding:0;font-size:11px;flex-shrink:0;}
 
   /* ---------- footer ---------- */
-  .footer{padding:20px 18px 22px;text-align:center;}
+  .footer{padding:20px 18px 22px;text-align:center;border-top:1px solid var(--line);margin-top:18px;}
   .footer .thanks{font-family:'Manrope',sans-serif;font-weight:700;font-size:13.5px;color:var(--navy);}
   .footer .contact{font-size:11.5px;color:var(--text-soft);margin-top:4px;}
 
@@ -370,6 +370,15 @@
   .exporting .sub-list li.zero-rate .sub-rate-input,
   .exporting .sub-list li.zero-rate .sub-amt{display:none !important;}
   .exporting .comp-box.is-empty{display:none !important;}
+
+  /* ---------- native browser print ---------- */
+  @media print{
+    body{background:#fff;padding:0;}
+    .app{max-width:none;}
+    .no-export{display:none !important;}
+    #sheet{box-shadow:none;border-radius:0;}
+    .table-wrap{overflow:visible !important;}
+  }
 
   /* ---------- UPI QR ---------- */
   .upi-qr-box{margin:16px 18px 4px;text-align:center;padding:14px 0 6px;}
@@ -415,6 +424,9 @@
   .branding-hint{font-size:11.5px;color:var(--text-soft);margin-bottom:2px;}
   #reportsPanel{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;}
   #reportsPanel .eyebrow2{font-family:'Manrope',sans-serif;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-soft);text-transform:uppercase;margin-bottom:4px;}
+  .report-daterange{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin:10px 0 16px;}
+  .rdr-field{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--text-soft);font-weight:700;}
+  .rdr-field input{padding:7px 8px;border-radius:7px;border:1px solid var(--line);background:var(--input-bg);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;}
   .report-sub{font-size:12px;color:var(--text-soft);margin-bottom:14px;}
   .report-block{margin-bottom:18px;}
   .report-block-title{font-family:'Manrope',sans-serif;font-weight:800;font-size:13px;color:var(--navy);margin-bottom:8px;}
@@ -581,6 +593,7 @@
     padding:3px 8px;border-radius:20px;
   }
   .inv-badge.due{background:var(--badge-due-bg);color:var(--danger);}
+  .inv-badge.due.overdue{background:var(--danger);color:#fff;}
   .inv-badge.settled{background:var(--amber-soft);color:var(--amber);}
   .inv-badge.quote{background:var(--badge-quote-bg);color:var(--badge-quote-color);}
   .inv-card-balance{font-size:12px;color:var(--text-soft);}
@@ -685,7 +698,7 @@
         <div class="auth-brand-sub">Waiting for approval</div>
       </div>
     </div>
-    <p style="color:var(--text-soft);font-size:14px;line-height:1.5;margin:0 0 16px;">
+    <p id="pendingApprovalMsg" style="color:var(--text-soft);font-size:14px;line-height:1.5;margin:0 0 16px;">
       Your account has been created, but an admin needs to approve it before you can sign in.
       Please check back later or contact your admin.
     </p>
@@ -744,6 +757,17 @@
     <div id="reportsPanel" class="no-export" style="display:none;">
       <div class="eyebrow2">Revenue Reports</div>
       <div class="report-sub" id="reportsRange"></div>
+      <div class="report-daterange">
+        <div class="rdr-field">
+          <span>From</span>
+          <input type="date" id="reportsDateFrom" onchange="renderReportsPanel()">
+        </div>
+        <div class="rdr-field">
+          <span>To</span>
+          <input type="date" id="reportsDateTo" onchange="renderReportsPanel()">
+        </div>
+        <button class="btn-text" onclick="clearReportsDateRange()">Clear</button>
+      </div>
       <div class="report-block">
         <div class="report-block-title">By Month</div>
         <div id="reportMonthly"></div>
@@ -757,6 +781,7 @@
         <div id="reportItems"></div>
       </div>
       <button class="btn-primary" onclick="exportInvoicesCSV()">⬇ Export All Invoices (CSV)</button>
+      <button class="btn-ghost" style="width:100%;margin-top:8px;" onclick="exportInvoicesCSV(true)">⬇ Export Selected Range Only (CSV)</button>
     </div>
 
     <div id="activityLogPanel" class="no-export admin-only" style="display:none;">
@@ -874,7 +899,7 @@
     </div>
     <div class="btns btns-2col">
       <button class="btn-ghost" onclick="showDashboard()">&larr; Dashboard</button>
-      <button class="btn-primary" onclick="saveCurrentInvoice()">Save Invoice</button>
+      <button class="btn-primary" id="saveInvoiceBtn" onclick="saveCurrentInvoice()">Save Invoice</button>
     </div>
     <div class="btns" style="margin-top:8px;">
       <button class="btn-ghost" onclick="window.print()">Print</button>
@@ -1230,6 +1255,7 @@ function recalc(){
   });
   const balance = total - advTotal;
   document.getElementById('balanceVal').textContent = fmt(balance);
+  currentInvoiceBalance = balance;
   updateUpiQr();
   updateBankDetails();
   applyBrandingLogo();
@@ -1463,6 +1489,11 @@ async function updateUpiQr(){
   const box = document.getElementById('upiQrBox');
   const codeEl = document.getElementById('upiQrCode');
   if(!box || !codeEl) return;
+  if(currentInvoiceBalance <= 0){
+    box.style.display = 'none';
+    codeEl.innerHTML = '';
+    return;
+  }
   const settings = loadSettings();
   const upiId = (settings.upiId || '').trim();
   if(!upiId || typeof QRCode === 'undefined'){
@@ -1515,6 +1546,10 @@ async function updateUpiQr(){
 function updateBankDetails(){
   const box = document.getElementById('bankDetailsBox');
   if(!box) return;
+  if(currentInvoiceBalance <= 0){
+    box.style.display = 'none';
+    return;
+  }
   const s = loadSettings();
   const accName = (s.bankAccName || '').trim();
   const bankName = (s.bankName || '').trim();
@@ -1774,6 +1809,7 @@ function loadInvoiceIntoEditor(data){
   document.getElementById('docKind').value = kind;
   document.getElementById('docKindLabel').textContent = kind === 'quote' ? 'QUOTATION' : 'INVOICE';
   document.getElementById('convertToInvoiceBar').style.display = kind === 'quote' ? '' : 'none';
+  updateSaveButtonLabel(kind);
   document.getElementById('invNumber').value = data.invNumber || '';
   document.getElementById('invNumberDisplay').textContent = data.invNumber ? ('#' + data.invNumber) : '';
   document.getElementById('invDate').value = data.invDate || new Date().toISOString().slice(0,10);
@@ -1791,6 +1827,19 @@ function loadInvoiceIntoEditor(data){
 
 // ---------- DASHBOARD <-> EDITOR NAVIGATION ----------
 let currentInvoiceId = null;
+// Kept in sync by recalc() below; used by updateUpiQr/updateBankDetails to
+// hide payment details once a bill is fully paid — no point showing a QR
+// code or bank account to someone who has already settled.
+let currentInvoiceBalance = 0;
+
+// Save button reads "Save Invoice/Quotation" for a brand-new document, and
+// "Update Invoice/Quotation" once you're editing one that already exists.
+function updateSaveButtonLabel(kind){
+  const btn = document.getElementById('saveInvoiceBtn');
+  if(!btn) return;
+  const noun = kind === 'quote' ? 'Quotation' : 'Invoice';
+  btn.textContent = currentInvoiceId ? `Update ${noun}` : `Save ${noun}`;
+}
 
 function showDashboard(){
   document.getElementById('editorScreen').style.display = 'none';
@@ -1845,9 +1894,38 @@ function toggleReportsPanel(){
   panel.style.display = isHidden ? '' : 'none';
 }
 
+// ---------- REPORTS DATE RANGE ----------
+function getReportsDateRange(){
+  const fromEl = document.getElementById('reportsDateFrom');
+  const toEl = document.getElementById('reportsDateTo');
+  return {
+    from: (fromEl && fromEl.value) || '',
+    to: (toEl && toEl.value) || ''
+  };
+}
+
+function isInvoiceInDateRange(inv, from, to){
+  const d = inv.data && inv.data.invDate || '';
+  if(from && (!d || d < from)) return false;
+  if(to && (!d || d > to)) return false;
+  return true;
+}
+
+function clearReportsDateRange(){
+  const fromEl = document.getElementById('reportsDateFrom');
+  const toEl = document.getElementById('reportsDateTo');
+  if(fromEl) fromEl.value = '';
+  if(toEl) toEl.value = '';
+  renderReportsPanel();
+}
+
 async function renderReportsPanel(){
   const list = await loadInvoicesList();
-  const real = list.filter(inv => inv.data && inv.data.kind !== 'quote');
+  const { from, to } = getReportsDateRange();
+  const real = list.filter(inv=>{
+    if(!inv.data || inv.data.kind === 'quote') return false;
+    return isInvoiceInDateRange(inv, from, to);
+  });
 
   const monthly = {};
   const clientTotals = {};
@@ -1874,9 +1952,12 @@ async function renderReportsPanel(){
   });
 
   const rangeEl = document.getElementById('reportsRange');
+  const rangeLabel = (from || to)
+    ? ` between ${from ? formatDMY(from) : 'the start'} and ${to ? formatDMY(to) : 'now'}`
+    : '';
   rangeEl.textContent = real.length
-    ? `Based on ${real.length} invoice${real.length===1?'':'s'} (quotations excluded)`
-    : 'No invoices yet.';
+    ? `Based on ${real.length} invoice${real.length===1?'':'s'}${rangeLabel} (quotations excluded)`
+    : `No invoices${rangeLabel || ' yet'}.`;
 
   // ---- monthly table, most recent first ----
   const monthlyEl = document.getElementById('reportMonthly');
@@ -1934,9 +2015,16 @@ function csvEscape(val){
   return s;
 }
 
-async function exportInvoicesCSV(){
-  const list = await loadInvoicesList();
-  if(list.length === 0){ alert('No invoices to export yet.'); return; }
+async function exportInvoicesCSV(rangeOnly){
+  let list = await loadInvoicesList();
+  let fileTag = 'all';
+  if(rangeOnly){
+    const { from, to } = getReportsDateRange();
+    if(!from && !to){ showToast('Set a From or To date first.', 'err'); return; }
+    list = list.filter(inv => isInvoiceInDateRange(inv, from, to));
+    fileTag = [from || 'start', to || 'now'].join('_to_');
+  }
+  if(list.length === 0){ alert('No invoices to export for this range.'); return; }
   const rows = [[
     'Type','Number','Date','Client Name','Phone','Venue','Event Date',
     'Total','Advance Paid','Balance Due','Status'
@@ -1969,7 +2057,7 @@ async function exportInvoicesCSV(){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'thillai-invoices-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.download = 'thillai-invoices-' + fileTag + '-' + new Date().toISOString().slice(0,10) + '.csv';
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -2129,6 +2217,24 @@ async function setInvoicePublic(id, isPublic){
   }
 }
 
+async function sendWhatsAppReminder(id){
+  if(!currentUserPermissions.can_share){ showToast("You don't have permission to share invoices.", 'err'); return; }
+  const list = await loadInvoicesList();
+  const inv = list.find(x=>x.id===id);
+  if(!inv) return;
+  const digits = (inv.data.phoneNo || '').replace(/\D/g,'');
+  if(!digits){ showToast('No phone number saved for this client.', 'err'); return; }
+  // Assume a 10-digit number is Indian and needs the country code; leave
+  // anything already longer (i.e. already has a country code) as-is.
+  const intlPhone = digits.length === 10 ? '91' + digits : digits;
+  const s = computeSummaryFromData(inv.data);
+  const name = inv.data.contactName || 'there';
+  const numTag = inv.data.invNumber ? ` (${inv.data.invNumber})` : '';
+  const msg = `Hi ${name}, this is a reminder that ${fmt(s.balance)} is still due on your invoice${numTag} from Thillai Decors and Events. Please let us know if you have any questions. Thank you!`;
+  window.open(`https://wa.me/${intlPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+  logAuditEvent('whatsapp_reminder_sent', { invoiceId: id });
+}
+
 async function shareInvoiceLink(id, alreadyPublic){
   if(!currentUserPermissions.can_share){ showToast("You don't have permission to share invoices.", 'err'); return; }
   if(!alreadyPublic){
@@ -2276,10 +2382,14 @@ async function renderDashboard(){
       const isDue = s.balance > 0;
       const isQuote = inv.data.kind === 'quote';
       const invNumDisp = inv.data.invNumber ? escapeHtml(inv.data.invNumber) + ' &middot; ' : '';
+      const daysOverdue = (isDue && !isQuote && inv.data.invDate)
+        ? Math.floor((Date.now() - new Date(inv.data.invDate).getTime()) / 86400000)
+        : 0;
+      const overdueTag = daysOverdue > 0 ? ` &middot; ${daysOverdue}d overdue` : '';
       const badge = isQuote
         ? `<span class="inv-badge quote">Quote</span>`
         : (isDue
-          ? `<span class="inv-badge due">Due</span>`
+          ? `<span class="inv-badge due${daysOverdue > 14 ? ' overdue' : ''}">Due${overdueTag}</span>`
           : `<span class="inv-badge settled">Settled</span>`);
       return `
         <div class="inv-card">
@@ -2299,6 +2409,7 @@ async function renderDashboard(){
           </div>
           <div class="inv-card-actions no-export">
             ${currentUserPermissions.can_edit ? `<button class="btn-text" onclick="openEditInvoice('${inv.id}')">Edit</button>` : ''}
+            ${isDue && !isQuote && currentUserPermissions.can_share ? `<button class="btn-text" style="color:#2fae5f;" onclick="sendWhatsAppReminder('${inv.id}')">📱 Remind</button>` : ''}
             ${currentUserPermissions.can_share ? `<button class="btn-text" onclick="shareInvoicePDF('${inv.id}')">Share PDF</button>` : ''}
             ${currentUserPermissions.can_share ? (inv.isPublic
               ? `<button class="btn-text" style="color:#4a5ee0;" onclick="shareInvoiceLink('${inv.id}', true)">🔗 Copy Link</button><button class="btn-text" onclick="revokeInvoiceLink('${inv.id}')">Revoke Link</button>`
@@ -2381,6 +2492,7 @@ async function convertCurrentToInvoice(){
   const newNumber = await generateInvoiceNumber('invoice');
   document.getElementById('invNumber').value = newNumber;
   document.getElementById('invNumberDisplay').textContent = '#' + newNumber;
+  updateSaveButtonLabel('invoice');
   await saveCurrentInvoice();
 }
 
@@ -2505,6 +2617,7 @@ async function saveCurrentInvoice(){
     currentInvoiceId = 'inv_'+Date.now();
     list.push({ id: currentInvoiceId, updatedAt: Date.now(), data });
   }
+  updateSaveButtonLabel(data.kind);
   const ok = await persistInvoicesList(list);
   if(!ok){
     showToast('⚠ Sorry, this could not be saved. Please try again.', 'err');
@@ -2740,7 +2853,7 @@ async function checkApprovedOrBlock(){
     if(!user) return true;
     const { data, error } = await supabaseClient
       .from('profiles')
-      .select('approved')
+      .select('approved, rejected')
       .eq('id', user.id)
       .maybeSingle();
     if(!error && data && data.approved === false){
@@ -2749,6 +2862,12 @@ async function checkApprovedOrBlock(){
       document.getElementById('dashboardScreen').style.display = 'none';
       document.getElementById('editorScreen').style.display = 'none';
       document.getElementById('resetPasswordScreen').style.display = 'none';
+      const msgEl = document.getElementById('pendingApprovalMsg');
+      if(msgEl){
+        msgEl.textContent = data.rejected
+          ? "Your account request wasn't approved. Contact your admin if you think this is a mistake."
+          : "Your account has been created, but an admin needs to approve it before you can sign in. Please check back later or contact your admin.";
+      }
       document.getElementById('pendingApprovalScreen').style.display = '';
       return false;
     }
@@ -2988,7 +3107,8 @@ async function refreshPendingApprovalBadge(){
     const { count, error } = await supabaseClient
       .from('profiles')
       .select('id', { count: 'exact', head: true })
-      .eq('approved', false);
+      .eq('approved', false)
+      .eq('rejected', false);
     if(!error) updateManageUsersBadge(count || 0);
   }catch(e){
     console.error('Could not check pending approvals', e);
@@ -3010,7 +3130,7 @@ async function loadUsersList(){
   try{
     const { data, error } = await supabaseClient
       .from('profiles')
-      .select('id, email, role, approved, can_add, can_edit, can_download, can_delete, can_share')
+      .select('id, email, role, approved, rejected, can_add, can_edit, can_download, can_delete, can_share')
       .order('email');
     if(error) throw error;
     renderUsersList(data || []);
@@ -3024,17 +3144,25 @@ function renderUsersList(users){
   const wrap = document.getElementById('manageUsersList');
   if(!wrap) return;
   if(users.length === 0){ wrap.textContent = 'No users yet.'; return; }
-  const pendingCount = users.filter(u=>!u.approved).length;
+  const pendingCount = users.filter(u=>!u.approved && !u.rejected).length;
   updateManageUsersBadge(pendingCount);
   wrap.innerHTML = users.map(u=>{
     const uid = escapeHtml(u.id);
     const isAdmin = u.role === 'admin';
+    const isPending = !u.approved && !u.rejected;
+    const statusText = u.rejected ? '✕ Rejected' : (u.approved ? '✓ Approved' : '⏳ Pending approval');
+    const statusColor = u.rejected ? 'var(--danger)' : (u.approved ? 'var(--amber)' : 'var(--text-soft)');
     const perm = (key, label) => `
       <label><input type="checkbox" data-uid="${uid}" data-key="${key}" ${u[key] ? 'checked' : ''}> ${label}</label>`;
     return `
       <div class="user-row" data-user-row="${uid}">
         <div class="user-row-email">${escapeHtml(u.email || '(no email)')}</div>
-        <div class="user-row-sub">${u.approved ? '✓ Approved' : '⏳ Pending approval'}</div>
+        <div class="user-row-sub" style="color:${statusColor};font-weight:700;">${statusText}</div>
+        ${isPending ? `
+        <div style="display:flex;gap:8px;margin:8px 0;">
+          <button class="btn-primary" style="flex:1;background:var(--amber);" onclick="setUserStatus('${uid}', true, false)">✓ Approve</button>
+          <button class="btn-ghost" style="flex:1;color:var(--danger);" onclick="setUserStatus('${uid}', false, true)">✕ Reject</button>
+        </div>` : ''}
         <div class="user-row-role">
           <span>Role:</span>
           <select data-uid="${uid}" data-key="role" onchange="onUserRoleChange('${uid}', this.value)">
@@ -3054,6 +3182,22 @@ function renderUsersList(users){
         <button class="btn-primary" style="width:100%;" onclick="saveUserRow('${uid}')">Save</button>
       </div>`;
   }).join('');
+}
+
+// Quick approve/reject for a pending sign-up, without needing the full
+// role/permissions form. approved and rejected are always opposites here.
+async function setUserStatus(uid, approved, rejected){
+  if(!supabaseClient) return;
+  try{
+    const { error } = await supabaseClient.from('profiles').update({ approved, rejected }).eq('id', uid);
+    if(error) throw error;
+    await logAuditEvent('user_status_changed', { userId: uid, approved, rejected });
+    showToast(approved ? '✓ User approved' : 'User rejected');
+    loadUsersList();
+  }catch(e){
+    showToast('⚠ Could not update user: ' + ((e && e.message) || 'unknown error'), 'err');
+    console.error(e);
+  }
 }
 
 // Instantly shows/hides the permission checkboxes when the admin flips the
