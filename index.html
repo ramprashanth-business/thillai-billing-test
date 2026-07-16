@@ -538,6 +538,16 @@
   .dash-filters{display:flex;gap:6px;flex-wrap:wrap;}
   #trashBar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff7ed;border:1px solid #fde3c8;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:13px;color:#7a5a2e;}
   .inv-badge.trashed{background:#f1f1f1;color:#777;}
+
+  /* ---------- toast ---------- */
+  .toast{
+    position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(12px);
+    background:var(--navy);color:#fff;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;
+    box-shadow:0 14px 34px rgba(21,34,56,.35);z-index:10050;opacity:0;pointer-events:none;
+    transition:opacity .22s ease, transform .22s ease;max-width:calc(100vw - 32px);text-align:center;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .toast.err{background:var(--danger);}
   .chip{
     border:1px solid var(--line);background:var(--input-bg);color:var(--text-soft);border-radius:20px;
     padding:8px 13px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;
@@ -583,6 +593,7 @@
 </style>
 </head>
 <body>
+<div id="toast" class="toast"></div>
 <div id="dashMoreMenu" class="more-menu" style="display:none;">
   <button class="btn-ghost install-app-btn" style="display:none;width:100%;text-align:left;" onclick="installApp()">⬇ Install App</button>
   <button class="btn-ghost theme-toggle-btn" style="width:100%;text-align:left;" onclick="toggleTheme()">🌙 Dark mode</button>
@@ -2321,6 +2332,7 @@ async function duplicateInvoice(id){
   const copy = { id: 'inv_'+Date.now(), updatedAt: Date.now(), data: newData };
   list.push(copy);
   await persistInvoicesList(list);
+  showToast(`✓ Duplicated as ${newData.invNumber}`);
   renderDashboard();
 }
 
@@ -2345,6 +2357,7 @@ async function convertQuoteToInvoice(id){
   inv.data.invNumber = await generateInvoiceNumber('invoice');
   inv.updatedAt = Date.now();
   await persistInvoicesList(list);
+  showToast(`✓ Converted to ${inv.data.invNumber}`);
   renderDashboard();
 }
 
@@ -2359,6 +2372,7 @@ async function deleteInvoice(id){
   inv.updatedAt = Date.now();
   await persistInvoicesList(list);
   logAuditEvent('invoice_deleted', { invoiceId: id });
+  showToast('🗑 Moved to Trash');
   renderDashboard();
 }
 
@@ -2370,6 +2384,7 @@ async function restoreInvoice(id){
   inv.updatedAt = Date.now();
   await persistInvoicesList(list);
   logAuditEvent('invoice_restored', { invoiceId: id });
+  showToast('✓ Restored');
   renderDashboard();
 }
 
@@ -2381,6 +2396,7 @@ async function permanentlyDeleteInvoice(id){
   list = list.filter(x=>x.id!==id);
   await persistInvoicesList(list);
   logAuditEvent('invoice_permanently_deleted', { invoiceId: id });
+  showToast('✓ Permanently deleted');
   renderDashboard();
 }
 
@@ -2394,24 +2410,75 @@ async function emptyTrash(){
   list = list.filter(inv => !(inv.data && inv.data.deletedAt));
   await persistInvoicesList(list);
   logAuditEvent('trash_emptied', { count: trashCount });
+  showToast('✓ Trash emptied');
   renderDashboard();
+}
+
+let toastTimer = null;
+function showToast(msg, kind){
+  const el = document.getElementById('toast');
+  if(!el) return;
+  el.textContent = msg;
+  el.className = 'toast show' + (kind === 'err' ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ el.classList.remove('show'); }, 2800);
+}
+
+// Field-by-field comparison between the invoice's previous saved data and
+// what's about to be saved, so an edit history entry can say exactly what
+// changed rather than just "invoice updated".
+const FIELD_LABELS = {
+  contactName:'Client name', phoneNo:'Phone', venueName:'Venue', eventDate:'Event date',
+  invDate:'Invoice date', invNumber:'Invoice number', kind:'Document type'
+};
+function diffInvoiceData(oldData, newData){
+  const changes = {};
+  Object.keys(FIELD_LABELS).forEach(f=>{
+    const oldVal = (oldData && oldData[f]) || '';
+    const newVal = (newData && newData[f]) || '';
+    if(oldVal !== newVal) changes[f] = { from: oldVal, to: newVal };
+  });
+  ['items','comp','advances'].forEach(f=>{
+    const oldJson = JSON.stringify((oldData && oldData[f]) || []);
+    const newJson = JSON.stringify((newData && newData[f]) || []);
+    if(oldJson !== newJson) changes[f] = 'changed';
+  });
+  return changes;
 }
 
 async function saveCurrentInvoice(){
   const data = serializeInvoice();
   let list = await loadInvoicesList();
+  let isNew = true;
+  let changes = null;
   if(currentInvoiceId){
     const idx = list.findIndex(x=>x.id===currentInvoiceId);
-    if(idx>=0){ list[idx].data = data; list[idx].updatedAt = Date.now(); }
-    else { list.push({ id: currentInvoiceId, updatedAt: Date.now(), data }); }
+    if(idx>=0){
+      isNew = false;
+      changes = diffInvoiceData(list[idx].data, data);
+      list[idx].data = data;
+      list[idx].updatedAt = Date.now();
+    } else {
+      list.push({ id: currentInvoiceId, updatedAt: Date.now(), data });
+    }
   } else {
     currentInvoiceId = 'inv_'+Date.now();
     list.push({ id: currentInvoiceId, updatedAt: Date.now(), data });
   }
   const ok = await persistInvoicesList(list);
   if(!ok){
-    alert('Sorry, the invoice could not be saved.');
+    showToast('⚠ Sorry, this could not be saved. Please try again.', 'err');
     return;
+  }
+  const label = data.kind === 'quote' ? 'Quotation' : 'Invoice';
+  if(isNew){
+    logAuditEvent('invoice_created', { invoiceId: currentInvoiceId, invNumber: data.invNumber });
+    showToast(`✓ ${label} saved`);
+  } else if(changes && Object.keys(changes).length > 0){
+    logAuditEvent('invoice_updated', { invoiceId: currentInvoiceId, invNumber: data.invNumber, changes });
+    showToast(`✓ ${label} updated`);
+  } else {
+    showToast(`✓ ${label} saved — no changes made`);
   }
   showDashboard();
 }
@@ -2789,9 +2856,26 @@ async function loadActivityLog(){
       const when = new Date(row.created_at).toLocaleString();
       const loc = row.location ? [row.location.city, row.location.region, row.location.country].filter(Boolean).join(', ') : '—';
       const device = row.device_info && row.device_info.userAgent ? row.device_info.userAgent : '—';
+      let changeSummary = '';
+      const d = row.details;
+      if(d && d.changes && Object.keys(d.changes).length){
+        const parts = Object.entries(d.changes).map(([field, change])=>{
+          const label = FIELD_LABELS[field] || field;
+          if(change && typeof change === 'object' && 'from' in change){
+            const from = change.from || '(blank)';
+            const to = change.to || '(blank)';
+            return `${label}: "${from}" → "${to}"`;
+          }
+          return `${label} changed`;
+        });
+        changeSummary = `<div style="color:var(--text);font-size:12.5px;margin-top:4px;">${parts.map(p=>escapeHtml(p)).join('<br>')}</div>`;
+      } else if(d && d.invNumber){
+        changeSummary = `<div style="color:var(--text-soft);font-size:12.5px;margin-top:4px;">${escapeHtml(d.invNumber)}</div>`;
+      }
       return `<div style="padding:8px 0;border-bottom:1px solid var(--line);">
         <div><strong>${row.action}</strong> — ${row.email || 'unknown user'}</div>
         <div style="color:var(--text-soft);">${when} · ${loc}</div>
+        ${changeSummary}
         <div style="color:var(--text-soft);font-size:11.5px;">${device}</div>
       </div>`;
     }).join('');
