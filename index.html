@@ -610,7 +610,7 @@
   <button class="btn-ghost" style="width:100%;text-align:left;" onclick="exportInvoicesCSV()">⬇ Export CSV</button>
   <button class="btn-ghost" style="width:100%;text-align:left;" onclick="setDashFilter('trash'); toggleMoreMenu();">🗑 Trash</button>
   <button class="btn-ghost admin-only" style="display:none;width:100%;text-align:left;" onclick="toggleActivityLogPanel()">🗂 Activity Log</button>
-  <button class="btn-ghost admin-only" style="display:none;width:100%;text-align:left;" onclick="toggleManageUsersPanel()">👤 Manage Users</button>
+  <button class="btn-ghost admin-only" id="manageUsersMenuBtn" style="display:none;width:100%;text-align:left;" onclick="toggleManageUsersPanel()">👤 Manage Users</button>
 </div>
 <script>
 // Applied immediately (before the rest of the page renders) so there's no
@@ -2261,8 +2261,8 @@ async function renderDashboard(){
             </div>
           </div>
           <div class="inv-card-actions no-export">
-            <button class="btn-text" onclick="restoreInvoice('${inv.id}')">Restore</button>
-            <button class="btn-text" style="color:var(--danger);" onclick="permanentlyDeleteInvoice('${inv.id}')">Delete Forever</button>
+            ${currentUserPermissions.can_edit ? `<button class="btn-text" onclick="restoreInvoice('${inv.id}')">Restore</button>` : ''}
+            ${currentUserPermissions.can_delete ? `<button class="btn-text" style="color:var(--danger);" onclick="permanentlyDeleteInvoice('${inv.id}')">Delete Forever</button>` : ''}
           </div>
         </div>
       `;
@@ -2298,14 +2298,14 @@ async function renderDashboard(){
             </div>
           </div>
           <div class="inv-card-actions no-export">
-            <button class="btn-text" onclick="openEditInvoice('${inv.id}')">Edit</button>
-            <button class="btn-text" onclick="shareInvoicePDF('${inv.id}')">Share PDF</button>
-            ${inv.isPublic
+            ${currentUserPermissions.can_edit ? `<button class="btn-text" onclick="openEditInvoice('${inv.id}')">Edit</button>` : ''}
+            ${currentUserPermissions.can_share ? `<button class="btn-text" onclick="shareInvoicePDF('${inv.id}')">Share PDF</button>` : ''}
+            ${currentUserPermissions.can_share ? (inv.isPublic
               ? `<button class="btn-text" style="color:#4a5ee0;" onclick="shareInvoiceLink('${inv.id}', true)">🔗 Copy Link</button><button class="btn-text" onclick="revokeInvoiceLink('${inv.id}')">Revoke Link</button>`
-              : `<button class="btn-text" onclick="shareInvoiceLink('${inv.id}', false)">🔗 Share Link</button>`}
-            ${isQuote ? `<button class="btn-text" onclick="convertQuoteToInvoice('${inv.id}')">Convert to Invoice</button>` : ''}
-            <button class="btn-text" onclick="duplicateInvoice('${inv.id}')">Duplicate</button>
-            <button class="btn-text" style="color:var(--danger);" onclick="deleteInvoice('${inv.id}')">Delete</button>
+              : `<button class="btn-text" onclick="shareInvoiceLink('${inv.id}', false)">🔗 Share Link</button>`) : ''}
+            ${isQuote && currentUserPermissions.can_edit ? `<button class="btn-text" onclick="convertQuoteToInvoice('${inv.id}')">Convert to Invoice</button>` : ''}
+            ${currentUserPermissions.can_add ? `<button class="btn-text" onclick="duplicateInvoice('${inv.id}')">Duplicate</button>` : ''}
+            ${currentUserPermissions.can_delete ? `<button class="btn-text" style="color:var(--danger);" onclick="deleteInvoice('${inv.id}')">Delete</button>` : ''}
           </div>
         </div>
       `;
@@ -2359,6 +2359,7 @@ async function openEditInvoice(id){
 }
 
 async function duplicateInvoice(id){
+  if(!currentUserPermissions.can_add){ showToast("You don't have permission to add invoices.", 'err'); return; }
   const list = await loadInvoicesList();
   const inv = list.find(x=>x.id===id);
   if(!inv) return;
@@ -2385,6 +2386,7 @@ async function convertCurrentToInvoice(){
 
 // Same conversion, triggered from a dashboard card instead of the open editor.
 async function convertQuoteToInvoice(id){
+  if(!currentUserPermissions.can_edit){ showToast("You don't have permission to edit invoices.", 'err'); return; }
   const list = await loadInvoicesList();
   const inv = list.find(x=>x.id===id);
   if(!inv || inv.data.kind !== 'quote') return;
@@ -2413,6 +2415,7 @@ async function deleteInvoice(id){
 }
 
 async function restoreInvoice(id){
+  if(!currentUserPermissions.can_edit){ showToast("You don't have permission to edit invoices.", 'err'); return; }
   let list = await loadInvoicesList();
   const inv = list.find(x=>x.id===id);
   if(!inv) return;
@@ -2675,6 +2678,7 @@ async function enterApp(){
   document.querySelectorAll('.add-doc-btn').forEach(el=>{
     el.style.display = currentUserPermissions.can_add ? '' : 'none';
   });
+  if(currentUserRole === 'admin') refreshPendingApprovalBadge();
   startInactivityWatch();
   syncSettingsFromCloud();
   let list = await loadInvoicesList();
@@ -2978,6 +2982,19 @@ async function loadActivityLog(){
 // on that person's row in `profiles`. Uses the anon key + RLS (a normal user
 // can only ever read/update their own row; only admins can read/update
 // everyone's), so no service-role key or server function is needed.
+async function refreshPendingApprovalBadge(){
+  if(!supabaseClient) return;
+  try{
+    const { count, error } = await supabaseClient
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('approved', false);
+    if(!error) updateManageUsersBadge(count || 0);
+  }catch(e){
+    console.error('Could not check pending approvals', e);
+  }
+}
+
 function toggleManageUsersPanel(){
   const panel = document.getElementById('manageUsersPanel');
   if(!panel) return;
@@ -3007,8 +3024,11 @@ function renderUsersList(users){
   const wrap = document.getElementById('manageUsersList');
   if(!wrap) return;
   if(users.length === 0){ wrap.textContent = 'No users yet.'; return; }
+  const pendingCount = users.filter(u=>!u.approved).length;
+  updateManageUsersBadge(pendingCount);
   wrap.innerHTML = users.map(u=>{
     const uid = escapeHtml(u.id);
+    const isAdmin = u.role === 'admin';
     const perm = (key, label) => `
       <label><input type="checkbox" data-uid="${uid}" data-key="${key}" ${u[key] ? 'checked' : ''}> ${label}</label>`;
     return `
@@ -3017,22 +3037,49 @@ function renderUsersList(users){
         <div class="user-row-sub">${u.approved ? '✓ Approved' : '⏳ Pending approval'}</div>
         <div class="user-row-role">
           <span>Role:</span>
-          <select data-uid="${uid}" data-key="role">
+          <select data-uid="${uid}" data-key="role" onchange="onUserRoleChange('${uid}', this.value)">
             <option value="user" ${u.role !== 'admin' ? 'selected' : ''}>User</option>
             <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
           </select>
           <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" data-uid="${uid}" data-key="approved" ${u.approved ? 'checked' : ''}> Approved</label>
         </div>
-        <div class="user-row-perms">
+        <div class="user-row-perms" data-perms-for="${uid}" style="${isAdmin ? 'display:none;' : ''}">
           ${perm('can_add','Add')}
           ${perm('can_edit','Edit')}
           ${perm('can_download','Download')}
           ${perm('can_delete','Delete')}
           ${perm('can_share','Share')}
         </div>
+        <div class="user-row-sub" data-admin-note-for="${uid}" style="${isAdmin ? '' : 'display:none;'}margin-bottom:8px;">Admins have full access — no individual permissions needed.</div>
         <button class="btn-primary" style="width:100%;" onclick="saveUserRow('${uid}')">Save</button>
       </div>`;
   }).join('');
+}
+
+// Instantly shows/hides the permission checkboxes when the admin flips the
+// Role dropdown, so it's obvious those checkboxes stop mattering — the
+// actual save still only happens when Save is tapped.
+function onUserRoleChange(uid, newRole){
+  const permsEl = document.querySelector(`[data-perms-for="${uid}"]`);
+  const noteEl = document.querySelector(`[data-admin-note-for="${uid}"]`);
+  if(!permsEl || !noteEl) return;
+  const isAdmin = newRole === 'admin';
+  permsEl.style.display = isAdmin ? 'none' : '';
+  noteEl.style.display = isAdmin ? '' : 'none';
+}
+
+function updateManageUsersBadge(pendingCount){
+  const btn = document.getElementById('manageUsersMenuBtn');
+  if(!btn) return;
+  const existing = btn.querySelector('.pending-badge');
+  if(existing) existing.remove();
+  if(pendingCount > 0){
+    const badge = document.createElement('span');
+    badge.className = 'pending-badge';
+    badge.style.cssText = 'background:var(--danger);color:#fff;border-radius:20px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:6px;';
+    badge.textContent = pendingCount;
+    btn.appendChild(badge);
+  }
 }
 
 async function saveUserRow(uid){
