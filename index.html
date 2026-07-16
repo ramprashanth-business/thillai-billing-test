@@ -1126,6 +1126,47 @@ function formatDMY(iso){
   if(!y||!m||!d) return '';
   return `${d}/${m}/${y}`;
 }
+
+// The "Dates" field on an invoice is free text (e.g. "11 & 12 Jul 2026",
+// "16/07/2026", "16 Jul 2026") rather than a strict date picker, since
+// events can span multiple days. This tries a few reasonable ways to read
+// it, preferring the LAST day mentioned (an event isn't over until its
+// final day) so overdue tracking counts from when the event actually
+// finished, not from whenever the invoice happened to be created.
+function parseEventEndDate(str){
+  if(!str) return null;
+  str = String(str).trim();
+  if(!str) return null;
+
+  // Plain ISO-ish or month-name formats JS already understands.
+  let d = new Date(str);
+  if(!isNaN(d.getTime())) return d;
+
+  // DD/MM/YYYY or DD-MM-YYYY (day-first, matching the rest of this app).
+  let m = str.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/);
+  if(m){
+    let [, dd, mm, yy] = m;
+    if(yy.length === 2) yy = '20' + yy;
+    d = new Date(+yy, +mm - 1, +dd);
+    if(!isNaN(d.getTime())) return d;
+  }
+
+  // Free text like "11 & 12 Jul 2026" — find the month + year mentioned,
+  // and use the largest day number in the string as the event's last day.
+  const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  const monthMatch = str.toLowerCase().match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\D{0,6}(\d{4})/);
+  if(monthMatch){
+    const monthIdx = MONTHS.indexOf(monthMatch[1]);
+    const year = +monthMatch[2];
+    const dayNums = (str.match(/\d{1,2}/g) || []).map(n=>+n).filter(n=>n>=1 && n<=31);
+    if(dayNums.length){
+      d = new Date(year, monthIdx, Math.max(...dayNums));
+      if(!isNaN(d.getTime())) return d;
+    }
+  }
+  return null;
+}
+
 function paintDate(input){
   const field = input.closest('.date-field');
   const disp = field && field.querySelector('.date-disp');
@@ -2231,8 +2272,64 @@ async function sendWhatsAppReminder(id){
   const name = inv.data.contactName || 'there';
   const numTag = inv.data.invNumber ? ` (${inv.data.invNumber})` : '';
   const msg = `Hi ${name}, this is a reminder that ${fmt(s.balance)} is still due on your invoice${numTag} from Thillai Decors and Events. Please let us know if you have any questions. Thank you!`;
+
+  // Prefer the device's native share sheet, which can attach the actual
+  // invoice PDF alongside the message — pick WhatsApp there and both go
+  // through together. Only falls back to a text-only wa.me link if this
+  // browser/device can't share files at all (e.g. most desktop browsers).
+  const sharedWithPdf = await tryShareInvoicePdfWithText(inv, msg);
+  if(sharedWithPdf){
+    logAuditEvent('whatsapp_reminder_sent', { invoiceId: id, withPdf: true });
+    return;
+  }
   window.open(`https://wa.me/${intlPhone}?text=${encodeURIComponent(msg)}`, '_blank');
-  logAuditEvent('whatsapp_reminder_sent', { invoiceId: id });
+  showToast('Opened WhatsApp with the reminder text — attach the PDF separately via "Share PDF" if needed.');
+  logAuditEvent('whatsapp_reminder_sent', { invoiceId: id, withPdf: false });
+}
+
+// Renders `inv` off-screen, builds its PDF, and hands it to the OS share
+// sheet together with `text` so WhatsApp (or Mail, etc.) shows up as a
+// target with the PDF pre-attached and the message pre-filled as the
+// caption. Returns false if this browser/device can't share files at all,
+// so the caller can fall back to a text-only WhatsApp link.
+async function tryShareInvoicePdfWithText(inv, text){
+  if(!navigator.canShare) return false;
+  const editorScreen = document.getElementById('editorScreen');
+  const prev = {
+    display: editorScreen.style.display,
+    position: editorScreen.style.position,
+    top: editorScreen.style.top,
+    left: editorScreen.style.left
+  };
+  editorScreen.style.position = 'fixed';
+  editorScreen.style.top = '0';
+  editorScreen.style.left = '-99999px';
+  editorScreen.style.display = '';
+  try{
+    loadInvoiceIntoEditor(inv.data);
+    let shared = false;
+    await withExportMode(async (sheet)=>{
+      const pdf = await buildInvoicePDF(sheet);
+      const filename = buildInvoiceFileName(inv.data);
+      const blob = pdf.output('blob');
+      const file = new File([blob], filename, { type: 'application/pdf' });
+      if(!navigator.canShare({ files: [file] })) return;
+      try{
+        await navigator.share({ files: [file], text, title: filename });
+        shared = true;
+      }catch(e){
+        // User opened the share sheet and cancelled — treat as handled so we
+        // don't then also pop open a wa.me tab as a confusing "fallback".
+        if(e && e.name === 'AbortError') shared = true;
+      }
+    });
+    return shared;
+  } finally {
+    editorScreen.style.display = prev.display;
+    editorScreen.style.position = prev.position;
+    editorScreen.style.top = prev.top;
+    editorScreen.style.left = prev.left;
+  }
 }
 
 async function shareInvoiceLink(id, alreadyPublic){
@@ -2382,8 +2479,9 @@ async function renderDashboard(){
       const isDue = s.balance > 0;
       const isQuote = inv.data.kind === 'quote';
       const invNumDisp = inv.data.invNumber ? escapeHtml(inv.data.invNumber) + ' &middot; ' : '';
-      const daysOverdue = (isDue && !isQuote && inv.data.invDate)
-        ? Math.floor((Date.now() - new Date(inv.data.invDate).getTime()) / 86400000)
+      const overdueBaseDate = parseEventEndDate(inv.data.eventDate) || (inv.data.invDate ? new Date(inv.data.invDate) : null);
+      const daysOverdue = (isDue && !isQuote && overdueBaseDate && !isNaN(overdueBaseDate.getTime()))
+        ? Math.max(0, Math.floor((Date.now() - overdueBaseDate.getTime()) / 86400000))
         : 0;
       const overdueTag = daysOverdue > 0 ? ` &middot; ${daysOverdue}d overdue` : '';
       const badge = isQuote
