@@ -1064,7 +1064,7 @@
     </div>
 
     <div class="balance-box">
-      <div class="lbl">Balance Due</div>
+      <div class="lbl" id="balanceLbl">Grand Total</div>
       <div class="val" id="balanceVal">₹0</div>
     </div>
 
@@ -1374,6 +1374,8 @@ function recalc(){
   });
   const balance = total - advTotal;
   document.getElementById('balanceVal').textContent = fmt(balance);
+  const balanceLblEl = document.getElementById('balanceLbl');
+  if(balanceLblEl) balanceLblEl.textContent = advTotal > 0 ? 'Balance Due' : 'Grand Total';
   currentInvoiceBalance = balance;
   updateUpiQr();
   updateBankDetails();
@@ -3694,13 +3696,17 @@ async function buildInvoicePDF(sheet){
       for(const b of blocks){
         if(b.top < pageEnd - 1 && b.bottom > pageEnd + 1){
           if(b.top > currentY + 20){
-            pageEnd = b.top;
+            // Floor (and pull back an extra hair) so the slice truly ends
+            // before the block starts — round()'ing this up, even by a
+            // sub-pixel, was letting a thin sliver of the block's top edge/
+            // border bleed onto the bottom of the previous page.
+            pageEnd = Math.floor(b.top) - 1;
           }
           break;
         }
       }
 
-      const contentHeightPx = Math.max(1, Math.round(pageEnd - currentY));
+      const contentHeightPx = Math.max(1, Math.floor(pageEnd - currentY));
       const totalPageHeightPx = reservedTopPx + contentHeightPx;
 
       const pageCanvas = document.createElement('canvas');
