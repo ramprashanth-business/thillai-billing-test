@@ -385,8 +385,9 @@
   .balance-box .lbl{font-family:'Manrope',sans-serif;font-weight:700;font-size:13px;letter-spacing:.5px;color:#c3cbdb;text-transform:uppercase;}
   .balance-box .val{font-family:'Manrope',sans-serif;font-weight:800;font-size:24px;color:var(--amber);}
 
-  .add-adv-row{padding:10px 18px 2px;text-align:right;}
-  .adv-line .btn-remove{width:22px;height:22px;min-width:22px;min-height:22px;padding:0;font-size:11px;flex-shrink:0;}
+  .add-adv-row{padding:10px 18px 2px;text-align:right;display:flex;justify-content:flex-end;gap:4px 14px;flex-wrap:wrap;}
+  .adv-line .btn-remove, .disc-line .btn-remove{width:22px;height:22px;min-width:22px;min-height:22px;padding:0;font-size:11px;flex-shrink:0;}
+  .disc-line .val{color:var(--danger);}
 
   /* ---------- footer ---------- */
   .footer{padding:20px 18px 22px;text-align:center;border-top:1px solid var(--line);margin-top:18px;}
@@ -1057,9 +1058,11 @@
         <div class="lbl">Subtotal</div>
         <div class="val" id="grandTotal">₹0</div>
       </div>
+      <div id="discRows"></div>
       <div id="advRows"></div>
     </div>
     <div class="add-adv-row no-export">
+      <button class="btn-text" onclick="addDiscount()">+ add discount</button>
       <button class="btn-text" onclick="addAdvance()">+ add advance payment</button>
     </div>
 
@@ -1368,11 +1371,17 @@ function recalc(){
   });
   document.getElementById('grandTotal').textContent = fmt(total);
 
+  let discTotal = 0;
+  document.querySelectorAll('.disc-amt-input').forEach(inp=>{
+    discTotal += parseFloat(inp.value.replace(/,/g,'')) || 0;
+  });
+  const netTotal = total - discTotal;
+
   let advTotal = 0;
   document.querySelectorAll('.adv-amt-input').forEach(inp=>{
     advTotal += parseFloat(inp.value.replace(/,/g,'')) || 0;
   });
-  const balance = total - advTotal;
+  const balance = netTotal - advTotal;
   document.getElementById('balanceVal').textContent = fmt(balance);
   const balanceLblEl = document.getElementById('balanceLbl');
   if(balanceLblEl) balanceLblEl.textContent = advTotal > 0 ? 'Balance Due' : 'Grand Total';
@@ -1687,6 +1696,23 @@ function updateBankDetails(){
   box.style.display = '';
 }
 
+function addDiscount(labelVal, amtVal){
+  const wrap = document.getElementById('discRows');
+  const row = document.createElement('div');
+  row.className = 'sum-row disc-line';
+  row.innerHTML = `
+    <div class="lbl"><button class="btn-remove no-export" onclick="this.closest('.disc-line').remove(); recalc();">✕</button><input type="text" class="disc-label-input" value="${escapeAttr(labelVal||'Discount')}" placeholder="Discount"></div>
+    <div class="val">- <input type="text" class="disc-amt-input" value="${amtVal||''}" placeholder="0" oninput="recalc()" inputmode="decimal">
+    </div>
+  `;
+  wrap.appendChild(row);
+  recalc();
+}
+
+function escapeAttr(s){
+  return (s||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+}
+
 function addAdvance(dateVal, amtVal){
   const wrap = document.getElementById('advRows');
   const row = document.createElement('div');
@@ -1750,7 +1776,7 @@ function blankInvoiceData(kind){
   return {
     kind: kind === 'quote' ? 'quote' : 'invoice',
     invNumber: '', invDate: today, contactName:'', phoneNo:'', venueName:'', eventDate:'',
-    items: [{title:'', qty:1, rate:'', subs:[]}], comp: [], advances: []
+    items: [{title:'', qty:1, rate:'', subs:[]}], comp: [], discounts: [], advances: []
   };
 }
 
@@ -1899,6 +1925,12 @@ function serializeInvoice(){
   });
   const comp = [];
   document.querySelectorAll('#compList .comp-item textarea').forEach(ta=>comp.push(ta.value));
+  const discounts = [];
+  document.querySelectorAll('#discRows .disc-line').forEach(row=>{
+    const labelInput = row.querySelector('.disc-label-input');
+    const amtInput = row.querySelector('.disc-amt-input');
+    discounts.push({ label: labelInput ? labelInput.value : 'Discount', amount: amtInput ? amtInput.value : '' });
+  });
   const advances = [];
   document.querySelectorAll('#advRows .adv-line').forEach(row=>{
     const dateInput = row.querySelector('input[type="date"]');
@@ -1913,13 +1945,14 @@ function serializeInvoice(){
     phoneNo: document.getElementById('phoneNo').value,
     venueName: document.getElementById('venueName').value,
     eventDate: document.getElementById('eventDate').value,
-    items, comp, advances
+    items, comp, discounts, advances
   };
 }
 
 function clearEditor(){
   document.getElementById('itemsBody').innerHTML = '';
   document.getElementById('compList').innerHTML = '';
+  document.getElementById('discRows').innerHTML = '';
   document.getElementById('advRows').innerHTML = '';
   itemCounter = 0;
 }
@@ -1940,6 +1973,7 @@ function loadInvoiceIntoEditor(data){
   document.getElementById('eventDate').value = data.eventDate || '';
   (data.items||[]).forEach(it => makeItem({title:it.title, qty:it.qty, rate:it.rate, subs:it.subs}));
   (data.comp||[]).forEach(c => addComp(c));
+  (data.discounts||[]).forEach(dsc => addDiscount(dsc.label, dsc.amount));
   (data.advances||[]).forEach(a => addAdvance(a.date, a.amount));
   recalc();
   paintAllDates();
@@ -1988,11 +2022,16 @@ function computeSummaryFromData(data){
     });
     total += q*r + subTotal;
   });
+  let disc = 0;
+  (data.discounts||[]).forEach(d=>{
+    disc += parseFloat((d.amount||'').toString().replace(/,/g,'')) || 0;
+  });
+  const netTotal = total - disc;
   let adv = 0;
   (data.advances||[]).forEach(a=>{
     adv += parseFloat((a.amount||'').toString().replace(/,/g,'')) || 0;
   });
-  return { total, balance: total - adv };
+  return { total: netTotal, discount: disc, balance: netTotal - adv };
 }
 
 function itemTotalFromData(it){
@@ -2148,7 +2187,7 @@ async function exportInvoicesCSV(rangeOnly){
   if(list.length === 0){ alert('No invoices to export for this range.'); return; }
   const rows = [[
     'Type','Number','Date','Client Name','Phone','Venue','Event Date',
-    'Total','Advance Paid','Balance Due','Status'
+    'Discount','Total','Advance Paid','Balance Due','Status'
   ]];
   list
     .slice()
@@ -2167,6 +2206,7 @@ async function exportInvoicesCSV(rangeOnly){
         d.phoneNo || '',
         d.venueName || '',
         d.eventDate || '',
+        s.discount.toFixed(2),
         s.total.toFixed(2),
         advPaid.toFixed(2),
         s.balance.toFixed(2),
@@ -2794,7 +2834,7 @@ function diffInvoiceData(oldData, newData){
     const newVal = (newData && newData[f]) || '';
     if(oldVal !== newVal) changes[f] = { from: oldVal, to: newVal };
   });
-  ['items','comp','advances'].forEach(f=>{
+  ['items','comp','discounts','advances'].forEach(f=>{
     const oldJson = JSON.stringify((oldData && oldData[f]) || []);
     const newJson = JSON.stringify((newData && newData[f]) || []);
     if(oldJson !== newJson) changes[f] = 'changed';
